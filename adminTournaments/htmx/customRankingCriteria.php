@@ -50,6 +50,9 @@ if(is_array($postedCriteria) == true){
 	foreach([1,2,3,4] as $num){
 		$eventRanking["orderByField{$num}"] = @$postedCriteria[$num]['field'] ?: null;
 		$eventRanking["orderBySort{$num}"] = @$postedCriteria[$num]['sort'] ?: null;
+		$eventRanking["customMode{$num}"] = (@$postedCriteria[$num]['mode'] === 'formula') ? 'formula' : 'field';
+		$eventRanking["customSource{$num}"] = @$postedCriteria[$num]['formula'] ?: null;
+		$eventRanking["customFallback{$num}"] = @$postedCriteria[$num]['fallback'] ?: null;
 	}
 } elseif(isCustomRanking($tournamentID) == true){
 	$eventRanking = getEventRankingForTournament($tournamentID);
