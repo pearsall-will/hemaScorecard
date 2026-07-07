@@ -2218,8 +2218,11 @@ function pool_DisplayResults($tournamentID, $groupSet = 1, $showTeams = false){
 			$maxNumFields = $i - 1;
 			break;
 		}
+		// Alias each display expression; long compiled formula expressions
+		// exceed MySQL's result column name length, so the raw expression
+		// string cannot be used as the row key.
 		$tmpStr = $displayMeta['displayField'.$i];
-		$selectStr .= ", {$tmpStr}";
+		$selectStr .= ", ({$tmpStr}) AS displayField{$i}";
 	}
 
 
@@ -2327,8 +2330,7 @@ function pool_DisplayResults($tournamentID, $groupSet = 1, $showTeams = false){
 		echo "<td  class='text-left'>{$name}</td>";
 		echo "<td class='hidden school-name text-left'>{$school}</td>";
 		for($i = 1; $i <= $maxNumFields; $i++){
-			$index = $displayMeta["displayField".$i];
-			$value = round($fighter[$index],1) + 0;
+			$value = round($fighter['displayField'.$i],1) + 0;
 
 			echo "<td>{$value}</td>";
 		}
