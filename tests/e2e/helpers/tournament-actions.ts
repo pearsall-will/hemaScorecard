@@ -11,8 +11,17 @@ import { MatchScript, pairKey } from './standings-calc';
 
 export type Fighter = { rosterID: number; firstName: string; lastName: string };
 
-/** One custom ranking criterion; sorts map to Highest/Lowest First in the UI. */
-export type CustomCriterion = { field: string; sort: 'DESC' | 'ASC' };
+/**
+ * One custom ranking criterion; sorts map to Highest/Lowest First in the UI.
+ * Provide `field` (whitelisted eventStandings column) OR `formula` (math over
+ * the formula field whitelist, with an optional divide-by-zero `fallback`).
+ */
+export type CustomCriterion = {
+  field?: string;
+  formula?: string;
+  fallback?: string;
+  sort: 'DESC' | 'ASC';
+};
 
 export type CreateTournamentOptions = {
   weapon: string;
@@ -40,15 +49,33 @@ export async function fillCustomCriteria(
   tournamentID: string,
   criteria: CustomCriterion[],
 ) {
-  // The criteria selects arrive via an htmx swap after picking 'Custom'.
-  await expect(page.locator(`#customCriteria1Field_select${tournamentID}`)).toBeAttached();
+  // The criteria rows arrive via an htmx swap after picking 'Custom'.
+  await expect(page.locator(`#customCriteria1Mode_select${tournamentID}`)).toBeAttached();
   for (let i = 0; i < criteria.length; i++) {
+    const criterion = criteria[i];
+    const n = i + 1;
+    if (criterion.formula) {
+      // Switching the mode re-renders the whole tbody via htmx; values
+      // already entered ride along through hx-include.
+      await page
+        .locator(`#customCriteria${n}Mode_select${tournamentID}`)
+        .selectOption('formula');
+      const formulaInput = page.locator(`#customCriteria${n}Formula_input${tournamentID}`);
+      await expect(formulaInput).toBeAttached();
+      await formulaInput.fill(criterion.formula);
+      if (criterion.fallback) {
+        await page
+          .locator(`#customCriteria${n}Fallback_input${tournamentID}`)
+          .fill(criterion.fallback);
+      }
+    } else {
+      await page
+        .locator(`#customCriteria${n}Field_select${tournamentID}`)
+        .selectOption(criterion.field!);
+    }
     await page
-      .locator(`#customCriteria${i + 1}Field_select${tournamentID}`)
-      .selectOption(criteria[i].field);
-    await page
-      .locator(`#customCriteria${i + 1}Sort_select${tournamentID}`)
-      .selectOption(criteria[i].sort);
+      .locator(`#customCriteria${n}Sort_select${tournamentID}`)
+      .selectOption(criterion.sort);
   }
 }
 
