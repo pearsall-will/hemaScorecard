@@ -43,6 +43,10 @@ export type CreateTournamentOptions = {
  * Fill the custom ranking criteria selects (htmx fragment) for the given
  * tournament's settings form. Assumes 'Custom' is already the selected
  * Ranking Type, which makes the selects appear.
+ *
+ * A formula criterion is edited through the shared #formulaEditorModal:
+ * picking '__formula__' on the tier's field select opens it, Apply copies
+ * the values into that tier's hidden inputs and closes it.
  */
 export async function fillCustomCriteria(
   page: Page,
@@ -50,24 +54,32 @@ export async function fillCustomCriteria(
   criteria: CustomCriterion[],
 ) {
   // The criteria rows arrive via an htmx swap after picking 'Custom'.
-  await expect(page.locator(`#customCriteria1Mode_select${tournamentID}`)).toBeAttached();
+  await expect(page.locator(`#customCriteria1Field_select${tournamentID}`)).toBeAttached();
   for (let i = 0; i < criteria.length; i++) {
     const criterion = criteria[i];
     const n = i + 1;
     if (criterion.formula) {
-      // Switching the mode re-renders the whole tbody via htmx; values
-      // already entered ride along through hx-include.
       await page
-        .locator(`#customCriteria${n}Mode_select${tournamentID}`)
-        .selectOption('formula');
-      const formulaInput = page.locator(`#customCriteria${n}Formula_input${tournamentID}`);
-      await expect(formulaInput).toBeAttached();
+        .locator(`#customCriteria${n}Field_select${tournamentID}`)
+        .selectOption('__formula__');
+
+      const modal = page.locator('#formulaEditorModal');
+      await expect(modal).toBeVisible();
+
+      const formulaInput = modal.locator('#formulaModalFormula');
       await formulaInput.fill(criterion.formula);
+      // .fill() only dispatches an 'input' event; htmx's hx-trigger listens
+      // for 'change'/'keyup', so nudge it manually for live validation.
+      await formulaInput.dispatchEvent('change');
+
       if (criterion.fallback) {
-        await page
-          .locator(`#customCriteria${n}Fallback_input${tournamentID}`)
-          .fill(criterion.fallback);
+        const fallbackInput = modal.locator('#formulaModalFallback');
+        await fallbackInput.fill(criterion.fallback);
+        await fallbackInput.dispatchEvent('change');
       }
+
+      await modal.locator('#formulaModalApplyBtn').click();
+      await expect(modal).toBeHidden();
     } else {
       await page
         .locator(`#customCriteria${n}Field_select${tournamentID}`)
