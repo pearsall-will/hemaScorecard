@@ -72,3 +72,39 @@ test("GET /v1/events/:id for the internal reserved TEST_EVENT_ID (2) returns 404
   const res = await request.get('/api.php/v1/events/2');
   expect(res.status()).toBe(404);
 });
+
+test('GET /v1/tournaments/:id returns tournament detail with format flags', async ({ request }) => {
+  const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}`);
+  expect(res.status()).toBe(200);
+
+  const body = await res.json();
+  expect(body.data.eventID).toBe(TEST_EVENT_ID);
+  expect(body.data).toHaveProperty('isPools');
+  expect(body.data).toHaveProperty('isBrackets');
+});
+
+test('GET /v1/tournaments/:id/participants returns roster entries with names', async ({ request }) => {
+  const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/participants`);
+  expect(res.status()).toBe(200);
+
+  const body = await res.json();
+  expect(typeof body.data).toBe('object');
+});
+
+test('GET /v1/tournaments/:id/pools and /pool-matches return json envelopes', async ({ request }) => {
+  const poolsRes = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/pools`);
+  expect(poolsRes.status()).toBe(200);
+  expect(Array.isArray((await poolsRes.json()).data)).toBe(true);
+
+  const matchesRes = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/pool-matches`);
+  expect(matchesRes.status()).toBe(200);
+  expect(typeof (await matchesRes.json()).data).toBe('object');
+});
+
+test('GET /v1/tournaments/:id for a nonexistent tournament returns 404', async ({ request }) => {
+  const res = await request.get('/api.php/v1/tournaments/999999');
+  expect(res.status()).toBe(404);
+
+  const body = await res.json();
+  expect(body.error.code).toBe('not_found');
+});
