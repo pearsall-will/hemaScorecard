@@ -136,3 +136,11 @@ test('GET /v1/tournaments/:id/pools rejects a non-integer groupSet with 400', as
   const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/pools?groupSet=abc`);
   expect(res.status()).toBe(400);
 });
+
+test('GET /v1/matches/:id for a nonexistent match returns 404', async ({ request }) => {
+  const res = await request.get('/api.php/v1/matches/999999999');
+  expect(res.status()).toBe(404);
+
+  const body = await res.json();
+  expect(body.error.code).toBe('not_found');
+});

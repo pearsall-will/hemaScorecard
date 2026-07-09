@@ -190,6 +190,30 @@ function apiGetTournamentStandings(array $params){
 
 /******************************************************************************/
 
+function apiGetMatch(array $params){
+// GET /v1/matches/{id}
+
+	$matchID = $params[0];
+	$match = apiRequireMatchEvent($matchID);
+
+	apiRespond($match);
+}
+
+/******************************************************************************/
+
+function apiGetMatchExchanges(array $params){
+// GET /v1/matches/{id}/exchanges
+
+	$matchID = $params[0];
+	apiRequireMatchEvent($matchID);
+
+	$exchanges = getMatchExchanges($matchID);
+
+	apiRespond($exchanges ?: []);
+}
+
+/******************************************************************************/
+
 function apiRequireEventPublished(int $eventID){
 // 404 (not 403) so an unpublished/hidden event's existence isn't revealed.
 
@@ -224,6 +248,25 @@ function apiRequireTournamentEvent(int $tournamentID): int {
 	apiRequireEventPublished($eventID);
 
 	return $eventID;
+}
+
+function apiRequireMatchEvent(int $matchID): array {
+// Returns getMatchInfo()'s array after validating the match exists and its
+// event has matches published. Centralizes the pattern shared by both
+// /matches/{id}... handlers. getMatchInfo() resolves tournamentID=0 for a
+// nonexistent matchID (no row to join against), which apiRequireTournamentEvent()
+// already 404s.
+
+	$match = getMatchInfo($matchID);
+	$tournamentID = (int)($match['tournamentID'] ?? 0);
+	if($tournamentID === 0){
+		apiError(404, 'not_found', 'Match not found');
+	}
+
+	$eventID = apiRequireTournamentEvent($tournamentID);
+	apiRequireMatchesPublished($eventID);
+
+	return $match;
 }
 
 // END OF FILE /////////////////////////////////////////////////////////////////
