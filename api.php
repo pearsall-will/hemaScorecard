@@ -36,6 +36,9 @@ if($version !== 'v1'){
 // [patternSegments, handlerFunctionName]. '{id}' captures a positive int.
 $routes = [
 	[['events'], 'apiListEvents'],
+	[['events', '{id}'], 'apiGetEvent'],
+	[['events', '{id}', 'tournaments'], 'apiGetEventTournaments'],
+	[['events', '{id}', 'participants'], 'apiGetEventParticipants'],
 ];
 
 // ---- Dispatch -------------------------------------------------------------

@@ -51,6 +51,7 @@
 	$_SESSION['tournamentID'] = 0;
 	$_SESSION['matchID']      = 0;
 	$_SESSION['groupSet']     = 1;
+	$_SESSION['dataModes']['tournamentSort'] = ''; // getEventTournaments() default sort
 
 // ALLOW — read functions reference ALLOW['...']; the public API never has
 // elevated permissions, so every flag is false.
