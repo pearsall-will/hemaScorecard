@@ -28,6 +28,7 @@ export type MatchScript = Map<string, MatchPlan>;
 
 export type FighterStats = {
   lastName: string;
+  matches: number;
   wins: number;
   pointsFor: number;
   pointsAgainst: number;
@@ -45,7 +46,7 @@ export function accumulateStats(script: MatchScript): Map<string, FighterStats> 
   const statsFor = (lastName: string) => {
     let s = stats.get(lastName);
     if (!s) {
-      s = { lastName, wins: 0, pointsFor: 0, pointsAgainst: 0, doubles: 0, hitsAgainst: 0 };
+      s = { lastName, matches: 0, wins: 0, pointsFor: 0, pointsAgainst: 0, doubles: 0, hitsAgainst: 0 };
       stats.set(lastName, s);
     }
     return s;
@@ -53,8 +54,8 @@ export function accumulateStats(script: MatchScript): Map<string, FighterStats> 
 
   for (const [key, plan] of script) {
     const [a, b] = key.split('|');
-    statsFor(a);
-    statsFor(b);
+    statsFor(a).matches++;
+    statsFor(b).matches++;
     statsFor(plan.winner).wins++;
 
     for (const ex of plan.exchanges) {

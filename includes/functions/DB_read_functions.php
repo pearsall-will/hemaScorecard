@@ -1048,7 +1048,11 @@ function findTiedFighters($tournamentID){
 			orderByField1, orderBySort1,
 			orderByField2, orderBySort2,
 			orderByField3, orderBySort3,
-			orderByField4, orderBySort4
+			orderByField4, orderBySort4,
+			customSource1, customFallback1,
+			customSource2, customFallback2,
+			customSource3, customFallback3,
+			customSource4, customFallback4
 			FROM eventTournaments
 			INNER JOIN eventRankings USING(tournamentID)
 			WHERE tournamentID = {$tournamentID}";
@@ -1070,24 +1074,42 @@ function findTiedFighters($tournamentID){
 		return [];
 	}
 
-	$orderBy = "eS.{$meta['orderByField1']} = eS2.{$meta['orderByField1']}";
+// Build the tie equality terms. Formula tiers (customSourceN set) are
+// recompiled from source with the eS/eS2 aliases; stored orderByField
+// SQL cannot be alias-prefixed as a bare column name can.
+	$formulaFields = customRankingFormulaFields();
+	$orderBy = '';
 
-	if($meta['orderByField2'] != ''
-		&& ($meta['orderBySort2'] == 'ASC' || $meta['orderBySort2'] == 'DESC')){
+	foreach([1,2,3,4] as $num){
+
+		if($meta["orderByField{$num}"] == ''
+			|| ($meta["orderBySort{$num}"] != 'ASC' && $meta["orderBySort{$num}"] != 'DESC')){
+			continue;
+		}
+
+		if(@$meta["customSource{$num}"] != ''){
+			$left = formula_compile($meta["customSource{$num}"], $meta["customFallback{$num}"], $formulaFields, 'eS.');
+			$right = formula_compile($meta["customSource{$num}"], $meta["customFallback{$num}"], $formulaFields, 'eS2.');
+
+			if(isset($left['error']) || isset($right['error'])){
+				setAlert(SYSTEM, "Invalid stored custom formula for tournament {$tournamentID} tier {$num} in findTiedFighters()");
+				continue;
+			}
+			$term = "({$left['sql']}) = ({$right['sql']})";
+		} else {
+			$term = "eS.{$meta["orderByField{$num}"]} = eS2.{$meta["orderByField{$num}"]}";
+		}
+
+		if($orderBy == ''){
+			$orderBy = $term;
+		} else {
 			$orderBy .= "
-		AND eS.{$meta['orderByField2']} = eS2.{$meta['orderByField2']}";
+		AND {$term}";
+		}
 	}
 
-	if($meta['orderByField3'] != ''
-		&& ($meta['orderBySort3'] == 'ASC' || $meta['orderBySort3'] == 'DESC')){
-			$orderBy .= "
-		AND eS.{$meta['orderByField3']} = eS2.{$meta['orderByField3']}";
-	}
-
-	if($meta['orderByField4'] != ''
-		&& ($meta['orderBySort4'] == 'ASC' || $meta['orderBySort4'] == 'DESC')){
-			$orderBy .= "
-		AND eS.{$meta['orderByField4']} = eS2.{$meta['orderByField4']}";
+	if($orderBy == ''){
+		return [];
 	}
 
 // Retrieve List
@@ -8390,7 +8412,11 @@ function getEventRankingForTournament($tournamentID){
 			orderByField1, orderBySort1,
 			orderByField2, orderBySort2,
 			orderByField3, orderBySort3,
-			orderByField4, orderBySort4
+			orderByField4, orderBySort4,
+			customSource1, customFallback1,
+			customSource2, customFallback2,
+			customSource3, customFallback3,
+			customSource4, customFallback4
 			FROM eventRankings
 			WHERE tournamentID = {$tournamentID}";
 	return mysqlQuery($sql, SINGLE);

@@ -11,8 +11,17 @@ import { MatchScript, pairKey } from './standings-calc';
 
 export type Fighter = { rosterID: number; firstName: string; lastName: string };
 
-/** One custom ranking criterion; sorts map to Highest/Lowest First in the UI. */
-export type CustomCriterion = { field: string; sort: 'DESC' | 'ASC' };
+/**
+ * One custom ranking criterion; sorts map to Highest/Lowest First in the UI.
+ * Provide `field` (whitelisted eventStandings column) OR `formula` (math over
+ * the formula field whitelist, with an optional divide-by-zero `fallback`).
+ */
+export type CustomCriterion = {
+  field?: string;
+  formula?: string;
+  fallback?: string;
+  sort: 'DESC' | 'ASC';
+};
 
 export type CreateTournamentOptions = {
   weapon: string;
@@ -34,21 +43,51 @@ export type CreateTournamentOptions = {
  * Fill the custom ranking criteria selects (htmx fragment) for the given
  * tournament's settings form. Assumes 'Custom' is already the selected
  * Ranking Type, which makes the selects appear.
+ *
+ * A formula criterion is edited through the shared #formulaEditorModal:
+ * picking '__formula__' on the tier's field select opens it, Apply copies
+ * the values into that tier's hidden inputs and closes it.
  */
 export async function fillCustomCriteria(
   page: Page,
   tournamentID: string,
   criteria: CustomCriterion[],
 ) {
-  // The criteria selects arrive via an htmx swap after picking 'Custom'.
+  // The criteria rows arrive via an htmx swap after picking 'Custom'.
   await expect(page.locator(`#customCriteria1Field_select${tournamentID}`)).toBeAttached();
   for (let i = 0; i < criteria.length; i++) {
+    const criterion = criteria[i];
+    const n = i + 1;
+    if (criterion.formula) {
+      await page
+        .locator(`#customCriteria${n}Field_select${tournamentID}`)
+        .selectOption('__formula__');
+
+      const modal = page.locator('#formulaEditorModal');
+      await expect(modal).toBeVisible();
+
+      const formulaInput = modal.locator('#formulaModalFormula');
+      await formulaInput.fill(criterion.formula);
+      // .fill() only dispatches an 'input' event; htmx's hx-trigger listens
+      // for 'change'/'keyup', so nudge it manually for live validation.
+      await formulaInput.dispatchEvent('change');
+
+      if (criterion.fallback) {
+        const fallbackInput = modal.locator('#formulaModalFallback');
+        await fallbackInput.fill(criterion.fallback);
+        await fallbackInput.dispatchEvent('change');
+      }
+
+      await modal.locator('#formulaModalApplyBtn').click();
+      await expect(modal).toBeHidden();
+    } else {
+      await page
+        .locator(`#customCriteria${n}Field_select${tournamentID}`)
+        .selectOption(criterion.field!);
+    }
     await page
-      .locator(`#customCriteria${i + 1}Field_select${tournamentID}`)
-      .selectOption(criteria[i].field);
-    await page
-      .locator(`#customCriteria${i + 1}Sort_select${tournamentID}`)
-      .selectOption(criteria[i].sort);
+      .locator(`#customCriteria${n}Sort_select${tournamentID}`)
+      .selectOption(criterion.sort);
   }
 }
 

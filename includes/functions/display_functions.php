@@ -795,7 +795,7 @@ function edit_tournamentRankingType($tournamentID = 0){
 				hx-target='#customRanking_div<?=$tournamentID?>'
 				hx-swap='outerHTML'
 				hx-vals='{"tournamentID": <?=(int)$tournamentID?>}'
-				hx-include='this, #reverseScore_select<?=$tournamentID?>, #customRanking_div<?=$tournamentID?> select'>
+				hx-include='this, #reverseScore_select<?=$tournamentID?>, #customRanking_div<?=$tournamentID?> select, #customRanking_div<?=$tournamentID?> input'>
 
 				<option disabled <?=$nullOptionSelected?>></option>
 
@@ -846,10 +846,184 @@ function edit_tournamentRankingType($tournamentID = 0){
 
 /******************************************************************************/
 
+function formulaEditorModal($tournamentID = 0){
+// Shared Foundation Reveal modal for editing one custom-ranking tier's
+// formula + divide-by-zero fallback. adminTournaments.php shows exactly one
+// tournament per page, so a single modal (emitted once, outside the
+// settings <form>) suffices for all 4 tiers.
+//
+// The modal is only an editor: it never submits. formulaCriteriaFieldChanged()
+// opens it when a tier's field <select> is set to '__formula__'; applyFormulaModal()
+// copies its values into that tier's hidden mode/formula/fallback inputs
+// (rendered by edit_customRankingCriteria()) and closes it. Live validation
+// reuses the existing adminTournaments/htmx/validateCustomFormula.php endpoint.
+
+	$formulaFields = customRankingFormulaFields();
+	?>
+
+	<?php // This page also loads a second (DataTables) jQuery after Foundation
+		  // binds .foundation() to the first one, which wipes $.fn.foundation
+		  // (see includes/footer.php's $createSortableDataTable branch). Foundation's
+		  // own data-open/data-close click delegation is bound to document once at
+		  // init time and keeps working regardless, so open/close goes through a
+		  // hidden native trigger instead of calling $(...).foundation(...) in JS. ?>
+	<a data-open='formulaEditorModal' id='formulaModalOpenTrigger' style='display:none;' aria-hidden='true'></a>
+
+	<div class='reveal' id='formulaEditorModal' data-reveal>
+
+		<h4>Custom Formula &mdash; <span id='formulaModalTier'>Indicator</span></h4>
+
+		<label>Formula
+			<input type='text' id='formulaModalFormula' maxlength='200'
+				name='updateTournament[customCriteria][0][formula]'
+				placeholder='(pointsFor - pointsAgainst) / matches'
+				hx-get='adminTournaments/htmx/validateCustomFormula.php'
+				hx-trigger='change, keyup delay:500ms, change from:#formulaModalFallback'
+				hx-target='#formulaModalMsg'
+				hx-include='#formulaModalFormula, #formulaModalFallback'>
+		</label>
+
+		<label style='max-width:10rem;'>If a division divides by zero, use:
+			<input type='number' step='any' id='formulaModalFallback' value='0'
+				name='updateTournament[customCriteria][0][fallback]'>
+		</label>
+
+		<div id='formulaModalMsg'></div>
+
+		<div class='callout secondary'>
+			Formulas may use numbers, + - * / and parentheses, and these fields:<BR>
+			<small><i><?=implode(', ', array_keys($formulaFields))?></i></small><BR>
+			Example: <code>(pointsFor - pointsAgainst) / matches</code>.
+			If a division divides by zero the fallback value above is used instead.
+		</div>
+
+		<div class='grid-x grid-margin-x' style='margin-top:1rem;'>
+			<button type='button' class='button small-6 cell no-bottom' id='formulaModalApplyBtn'
+				data-close onclick='applyFormulaModal()'>
+				Apply
+			</button>
+			<span class='button secondary small-6 cell no-bottom' id='formulaModalCancelBtn'
+				data-close onclick='cancelFormulaModal()'>
+				Cancel
+			</span>
+		</div>
+
+		<button class='close-button' data-close aria-label='Close modal' type='button'
+			onclick='cancelFormulaModal()'>
+			<span aria-hidden='true'>&times;</span>
+		</button>
+
+	</div>
+
+	<script>
+
+	// Bridges a tier's field <select> / hidden inputs (rendered per-tier by
+	// edit_customRankingCriteria()) with the single shared #formulaEditorModal.
+	var _formulaModalState = null;
+
+	function formulaCriteriaFieldChanged(tournamentID, tierNum, selectEl, tierLabel){
+		if(selectEl.value === '__formula__'){
+			openFormulaModal(tournamentID, tierNum, tierLabel, selectEl);
+		} else {
+			selectEl.dataset.prevValue = selectEl.value;
+			document.getElementById('customCriteria'+tierNum+'Mode_hidden'+tournamentID).value = 'field';
+			document.getElementById('customCriteria'+tierNum+'Formula_hidden'+tournamentID).value = '';
+			document.getElementById('customCriteria'+tierNum+'Fallback_hidden'+tournamentID).value = '';
+			var summary = document.getElementById('customCriteria'+tierNum+'FormulaSummary'+tournamentID);
+			if(summary){ summary.style.display = 'none'; }
+			enableTournamentButton(tournamentID);
+		}
+	}
+
+	function openFormulaModalFromSummary(tournamentID, tierNum, tierLabel){
+		var selectEl = document.getElementById('customCriteria'+tierNum+'Field_select'+tournamentID);
+		openFormulaModal(tournamentID, tierNum, tierLabel, selectEl);
+	}
+
+	function openFormulaModal(tournamentID, tierNum, tierLabel, selectEl){
+		_formulaModalState = {
+			tid: tournamentID,
+			num: tierNum,
+			prevValue: selectEl ? (selectEl.dataset.prevValue || '') : ''
+		};
+
+		document.getElementById('formulaModalTier').textContent = tierLabel;
+
+		var formulaHidden = document.getElementById('customCriteria'+tierNum+'Formula_hidden'+tournamentID);
+		var fallbackHidden = document.getElementById('customCriteria'+tierNum+'Fallback_hidden'+tournamentID);
+		var formulaInput = document.getElementById('formulaModalFormula');
+		var fallbackInput = document.getElementById('formulaModalFallback');
+
+		formulaInput.value = formulaHidden ? formulaHidden.value : '';
+		fallbackInput.value = (fallbackHidden && fallbackHidden.value !== '') ? fallbackHidden.value : '0';
+
+		document.getElementById('formulaModalMsg').innerHTML = '';
+
+		// Not $(...).foundation('open') -- see the note above the hidden
+		// #formulaModalOpenTrigger anchor.
+		document.getElementById('formulaModalOpenTrigger').click();
+
+		// Re-run live validation against the prefilled value; hx-trigger only
+		// fires on a real 'change' event, which setting .value doesn't raise.
+		formulaInput.dispatchEvent(new Event('change', {bubbles: true}));
+	}
+
+	function applyFormulaModal(){
+		if(!_formulaModalState){ return; }
+		var state = _formulaModalState;
+
+		var formula = document.getElementById('formulaModalFormula').value.trim();
+		var fallback = document.getElementById('formulaModalFallback').value.trim();
+		if(fallback === ''){ fallback = '0'; }
+
+		document.getElementById('customCriteria'+state.num+'Mode_hidden'+state.tid).value = 'formula';
+		document.getElementById('customCriteria'+state.num+'Formula_hidden'+state.tid).value = formula;
+		document.getElementById('customCriteria'+state.num+'Fallback_hidden'+state.tid).value = fallback;
+
+		var fieldSelect = document.getElementById('customCriteria'+state.num+'Field_select'+state.tid);
+		if(fieldSelect){ fieldSelect.value = '__formula__'; }
+
+		var summary = document.getElementById('customCriteria'+state.num+'FormulaSummary'+state.tid);
+		if(summary){
+			summary.textContent = formula;
+			summary.style.display = '';
+		}
+
+		enableTournamentButton(state.tid);
+		// Closing itself is handled by the Apply button's own data-close attribute.
+	}
+
+	function cancelFormulaModal(){
+		var state = _formulaModalState;
+		if(state){
+			var formulaHidden = document.getElementById('customCriteria'+state.num+'Formula_hidden'+state.tid);
+			// Only revert the field select if this tier had no formula before
+			// the modal opened (e.g. user picked "Custom formula..." then
+			// backed out); leave an already-saved formula tier alone.
+			if(formulaHidden && formulaHidden.value === ''){
+				var fieldSelect = document.getElementById('customCriteria'+state.num+'Field_select'+state.tid);
+				if(fieldSelect){ fieldSelect.value = state.prevValue; }
+			}
+		}
+		// Closing itself is handled by the Cancel/x button's own data-close attribute.
+	}
+
+	</script>
+
+<?php }
+
+/******************************************************************************/
+
 function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $isReverse = false){
 // Renders the custom ranking criteria selectors as a <tbody> fragment.
 // Emits an empty <tbody> when $eventRanking is null (custom not selected)
 // so the htmx swap target always exists in the options table.
+// Each tier is either a whitelisted field pick or a typed math formula
+// (with a divide-by-zero fallback value), edited via the shared
+// #formulaEditorModal (see formulaEditorModal()) opened from the field
+// <select>'s "Custom formula..." option.
+// A tier renders in formula mode when customSource{N} is set (saved
+// config) or customMode{N} says so (unsaved form state).
 // $isReverse adds a warning about how criteria behave under
 // Golf/Injury (reverse) scoring.
 // Also echoed by adminTournaments/htmx/customRankingCriteria.php.
@@ -882,14 +1056,18 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 			if(isset($criteriaFields[$currentField]) == true && $currentSort == null){
 				$currentSort = $criteriaFields[$currentField][1];
 			}
+
+			$currentFormula = (string)@$eventRanking["customSource{$num}"];
+			$currentFallback = (string)@$eventRanking["customFallback{$num}"];
+			$isFormula = (@$eventRanking["customMode{$num}"] === 'formula' || $currentFormula !== '');
 	?>
 
 	<tr>
 		<td class='shrink-column'>
 			<?=$label?>
 			<?php if($num == 1){
-				tooltip("Fighters are ordered by the Indicator field.<BR>
-						Ties are broken by the tiebreaker fields in order.");
+				tooltip('Fighters are ordered by the Indicator field or formula.
+Ties are broken by the tiebreaker criteria in order.');
 			} ?>
 		</td>
 
@@ -898,18 +1076,31 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 
 			<select name='updateTournament[customCriteria][<?=$num?>][field]' class='shrink'
 				id='customCriteria<?=$num?>Field_select<?=$tournamentID?>'
-				onchange="enableTournamentButton('<?=$tournamentID?>')">
+				onfocus="this.dataset.prevValue = this.value;"
+				onchange="formulaCriteriaFieldChanged('<?=$tournamentID?>', <?=$num?>, this, '<?=$label?>')">
 
 				<?php if($num != 1): ?>
-					<option value='' <?=isSelected($currentField == null)?>>- none -</option>
+					<option value='' <?=isSelected($currentField == null && $isFormula == false)?>>- none -</option>
 				<?php endif ?>
 
 				<?php foreach($criteriaFields as $field => $fieldInfo): ?>
-					<option <?=optionValue($field, $currentField)?> >
+					<option <?=optionValue($field, $isFormula ? null : $currentField)?> >
 						<?=$fieldInfo[0]?>
 					</option>
 				<?php endforeach ?>
+
+				<option value='__formula__' <?=($isFormula ? 'selected' : '')?>>&#9998; Custom formula&hellip;</option>
 			</select>
+
+			<input type='hidden' name='updateTournament[customCriteria][<?=$num?>][mode]'
+				id='customCriteria<?=$num?>Mode_hidden<?=$tournamentID?>'
+				value='<?=($isFormula ? 'formula' : 'field')?>'>
+			<input type='hidden' name='updateTournament[customCriteria][<?=$num?>][formula]'
+				id='customCriteria<?=$num?>Formula_hidden<?=$tournamentID?>'
+				value='<?=htmlspecialchars($currentFormula, ENT_QUOTES)?>'>
+			<input type='hidden' name='updateTournament[customCriteria][<?=$num?>][fallback]'
+				id='customCriteria<?=$num?>Fallback_hidden<?=$tournamentID?>'
+				value='<?=htmlspecialchars(($currentFallback === '') ? '0' : $currentFallback, ENT_QUOTES)?>'>
 
 			<select name='updateTournament[customCriteria][<?=$num?>][sort]' class='shrink'
 				id='customCriteria<?=$num?>Sort_select<?=$tournamentID?>'
@@ -919,12 +1110,22 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 				<option <?=optionValue('ASC', $currentSort)?> >Lowest First</option>
 			</select>
 
+			<span class='cell custom-criteria-formula-summary' data-tier='<?=$num?>'
+				id='customCriteria<?=$num?>FormulaSummary<?=$tournamentID?>'
+				style='<?=($isFormula ? '' : 'display:none;')?> cursor:pointer;'
+				onclick="openFormulaModalFromSummary('<?=$tournamentID?>', <?=$num?>, '<?=$label?>')">
+				&#9998; <?=htmlspecialchars($currentFormula, ENT_QUOTES)?>
+			</span>
+
 		</div>
 		</td>
 	</tr>
 
 	<?php
 		endforeach;
+	?>
+
+	<?php
 	endif;
 
 	echo "</tbody>";

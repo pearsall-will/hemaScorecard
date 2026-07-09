@@ -7021,46 +7021,93 @@ function updateEventTournaments($tournamentID, $updateType, $formInfo){
 /******************************************************************************/
 
 function validateCustomRankingCriteria($formCriteria){
-// Validates posted custom ranking criteria against the field whitelist.
-// Returns an ordered list of ['label','expression','sort'] entries,
-// or null (with a user error alert) if the input is invalid.
-// Only whitelisted field names and literal ASC/DESC may reach an ORDER BY.
+// Validates posted custom ranking criteria. Each tier is either a field
+// picked from the customRankingCriteria() whitelist or a user formula
+// compiled by formula_compile() (which regenerates safe SQL from a
+// validated parse tree; raw user text never reaches an ORDER BY).
+// Returns an ordered list of ['label','expression','sort','source','fallback']
+// entries, or null (with a user error alert) if the input is invalid.
 
 	$criteriaFields = customRankingCriteria();
+	$formulaFields = customRankingFormulaFields();
 
 	$criteria = [];
-	$fieldsUsed = [];
+	$expressionsUsed = [];
 
 	foreach([1,2,3,4] as $num){
 
-		$field = @$formCriteria[$num]['field'];
-
-		if($field == null || $field == ''){
-			if($num == 1){
-				setAlert(USER_ERROR, "An Indicator field must be selected for a Custom Ranking Type.<BR><b>Tournament not updated.</b>");
-				return null;
-			}
-			continue;
-		}
-
-		if(isset($criteriaFields[$field]) == false){
-			setAlert(USER_ERROR, "Invalid custom ranking field.<BR><b>Tournament not updated.</b>");
-			return null;
-		}
-
-		if(isset($fieldsUsed[$field]) == true){
-			setAlert(USER_ERROR, "The same field may not be used for more than one custom ranking criteria.<BR><b>Tournament not updated.</b>");
-			return null;
-		}
-		$fieldsUsed[$field] = true;
+		$tierName = ($num == 1) ? 'Indicator' : 'Tiebreaker '.($num-1);
+		$mode = (@$formCriteria[$num]['mode'] === 'formula') ? 'formula' : 'field';
 
 		// Map through a strict comparison so the raw POST string never reaches SQL
 		$sort = (@$formCriteria[$num]['sort'] === 'ASC') ? 'ASC' : 'DESC';
 
+		if($mode === 'formula'){
+
+			$source = trim((string)@$formCriteria[$num]['formula']);
+
+			if($source === ''){
+				if($num == 1){
+					setAlert(USER_ERROR, "An Indicator formula must be provided for a Custom Ranking Type.<BR><b>Tournament not updated.</b>");
+					return null;
+				}
+				continue;
+			}
+
+			$fallback = trim((string)@$formCriteria[$num]['fallback']);
+			if($fallback === ''){
+				$fallback = '0';
+			}
+
+			$compiled = formula_compile($source, $fallback, $formulaFields);
+			if(isset($compiled['error'])){
+				setAlert(USER_ERROR, "{$tierName} formula: {$compiled['error']}<BR><b>Tournament not updated.</b>");
+				return null;
+			}
+
+			$expression = $compiled['sql'];
+			$canonical = $compiled['canonical'];
+
+			// Source text only contains grammar-safe characters once compiled,
+			// but escape for display anyway.
+			$label = htmlspecialchars((strlen($source) > 77) ? substr($source, 0, 77).'...' : $source);
+
+		} else {
+
+			$field = @$formCriteria[$num]['field'];
+
+			if($field == null || $field == ''){
+				if($num == 1){
+					setAlert(USER_ERROR, "An Indicator field must be selected for a Custom Ranking Type.<BR><b>Tournament not updated.</b>");
+					return null;
+				}
+				continue;
+			}
+
+			if(isset($criteriaFields[$field]) == false){
+				setAlert(USER_ERROR, "Invalid custom ranking field.<BR><b>Tournament not updated.</b>");
+				return null;
+			}
+
+			$expression = $field;
+			$canonical = $field;
+			$label = $criteriaFields[$field][0];
+			$source = null;
+			$fallback = null;
+		}
+
+		if(isset($expressionsUsed[$canonical]) == true){
+			setAlert(USER_ERROR, "The same field or formula may not be used for more than one custom ranking criteria.<BR><b>Tournament not updated.</b>");
+			return null;
+		}
+		$expressionsUsed[$canonical] = true;
+
 		$criteria[] = [
-			'label' => $criteriaFields[$field][0],
-			'expression' => $field,
+			'label' => $label,
+			'expression' => $expression,
 			'sort' => $sort,
+			'source' => $source,
+			'fallback' => $fallback,
 		];
 	}
 
@@ -7072,8 +7119,12 @@ function validateCustomRankingCriteria($formCriteria){
 
 function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria){
 // Upserts a tournament defined (custom) ranking into eventRankings.
-// $criteria is an ordered list of ['label','expression','sort'] entries
-// which have already been validated against the criteria whitelist.
+// $criteria is an ordered list of ['label','expression','sort','source','fallback']
+// entries which have already been validated (fields against the criteria
+// whitelist, formulas compiled to safe SQL by formula_compile()).
+// Formula tiers store their raw source text in customSourceN (non-null
+// source marks the tier as a formula) and the compiled SQL in the
+// orderByField/displayField/scoreFormula columns.
 // systemRankingID is null to mark the ranking as custom.
 
 	$tournamentID = (int)$tournamentID;
@@ -7099,11 +7150,15 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 			$entry = $criteria[$num-1];
 
 			if($num <= 4){
-				$values["orderByField{$num}"] = "'".$entry['expression']."'";
+				// Expressions are whitelisted field names or compiler output;
+				// quote_smart escaping is defense in depth only.
+				$values["orderByField{$num}"] = quote_smart($entry['expression']);
 				$values["orderBySort{$num}"] = "'".$entry['sort']."'";
+				$values["customSource{$num}"] = ($entry['source'] === null) ? "NULL" : quote_smart($entry['source']);
+				$values["customFallback{$num}"] = ($entry['fallback'] === null) ? "NULL" : "'".$entry['fallback']."'";
 			}
 			$values["displayTitle{$num}"] = "'".$entry['label']."'";
-			$values["displayField{$num}"] = "'".$entry['expression']."'";
+			$values["displayField{$num}"] = quote_smart($entry['expression']);
 
 			if($num == 1){
 				$description .= "{$entry['label']} [{$sortWords[$entry['sort']]}]";
@@ -7117,6 +7172,8 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 			if($num <= 4){
 				$values["orderByField{$num}"] = "NULL";
 				$values["orderBySort{$num}"] = "NULL";
+				$values["customSource{$num}"] = "NULL";
+				$values["customFallback{$num}"] = "NULL";
 			}
 			$values["displayTitle{$num}"] = "'Score'";
 			$values["displayField{$num}"] = "'score'";
@@ -7125,19 +7182,23 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 			if($num <= 4){
 				$values["orderByField{$num}"] = "NULL";
 				$values["orderBySort{$num}"] = "NULL";
+				$values["customSource{$num}"] = "NULL";
+				$values["customFallback{$num}"] = "NULL";
 			}
 			$values["displayTitle{$num}"] = "NULL";
 			$values["displayField{$num}"] = "NULL";
 		}
 	}
 
-	$scoreFormula = "'".$criteria[0]['expression']."'";
+	$scoreFormula = quote_smart($criteria[0]['expression']);
 
 	$sql = "INSERT INTO eventRankings (
 				eventID, tournamentID, systemRankingID,
 				name, formatID, description, displayFunction, scoringFunction, scoreFormula,
 				orderByField1, orderBySort1, orderByField2, orderBySort2,
 				orderByField3, orderBySort3, orderByField4, orderBySort4,
+				customSource1, customFallback1, customSource2, customFallback2,
+				customSource3, customFallback3, customSource4, customFallback4,
 				displayTitle1, displayField1, displayTitle2, displayField2,
 				displayTitle3, displayField3, displayTitle4, displayField4,
 				displayTitle5, displayField5
@@ -7148,6 +7209,10 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 				{$values['orderByField2']}, {$values['orderBySort2']},
 				{$values['orderByField3']}, {$values['orderBySort3']},
 				{$values['orderByField4']}, {$values['orderBySort4']},
+				{$values['customSource1']}, {$values['customFallback1']},
+				{$values['customSource2']}, {$values['customFallback2']},
+				{$values['customSource3']}, {$values['customFallback3']},
+				{$values['customSource4']}, {$values['customFallback4']},
 				{$values['displayTitle1']}, {$values['displayField1']},
 				{$values['displayTitle2']}, {$values['displayField2']},
 				{$values['displayTitle3']}, {$values['displayField3']},
@@ -7171,6 +7236,14 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 				orderBySort3 = VALUES(orderBySort3),
 				orderByField4 = VALUES(orderByField4),
 				orderBySort4 = VALUES(orderBySort4),
+				customSource1 = VALUES(customSource1),
+				customFallback1 = VALUES(customFallback1),
+				customSource2 = VALUES(customSource2),
+				customFallback2 = VALUES(customFallback2),
+				customSource3 = VALUES(customSource3),
+				customFallback3 = VALUES(customFallback3),
+				customSource4 = VALUES(customSource4),
+				customFallback4 = VALUES(customFallback4),
 				displayTitle1 = VALUES(displayTitle1),
 				displayField1 = VALUES(displayField1),
 				displayTitle2 = VALUES(displayTitle2),
