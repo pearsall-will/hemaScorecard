@@ -985,7 +985,7 @@ function formulaEditorModal($tournamentID = 0){
 
 		var summary = document.getElementById('customCriteria'+state.num+'FormulaSummary'+state.tid);
 		if(summary){
-			summary.textContent = 'f(x) = ' + formula;
+			summary.textContent = formula;
 			summary.style.display = '';
 		}
 
@@ -1066,8 +1066,8 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 		<td class='shrink-column'>
 			<?=$label?>
 			<?php if($num == 1){
-				tooltip("Fighters are ordered by the Indicator field or formula.<BR>
-						Ties are broken by the tiebreaker criteria in order.");
+				tooltip('Fighters are ordered by the Indicator field or formula.
+Ties are broken by the tiebreaker criteria in order.');
 			} ?>
 		</td>
 
@@ -1114,7 +1114,7 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 				id='customCriteria<?=$num?>FormulaSummary<?=$tournamentID?>'
 				style='<?=($isFormula ? '' : 'display:none;')?> cursor:pointer;'
 				onclick="openFormulaModalFromSummary('<?=$tournamentID?>', <?=$num?>, '<?=$label?>')">
-				&#9998; f(x) = <?=htmlspecialchars($currentFormula, ENT_QUOTES)?>
+				&#9998; <?=htmlspecialchars($currentFormula, ENT_QUOTES)?>
 			</span>
 
 		</div>
