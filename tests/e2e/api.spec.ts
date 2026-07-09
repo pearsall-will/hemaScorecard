@@ -108,3 +108,31 @@ test('GET /v1/tournaments/:id for a nonexistent tournament returns 404', async (
   const body = await res.json();
   expect(body.error.code).toBe('not_found');
 });
+
+test('GET /v1/tournaments/:id/brackets returns an empty envelope when no bracket exists', async ({ request }) => {
+  const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/brackets`);
+  expect(res.status()).toBe(200);
+
+  const body = await res.json();
+  expect(body.data.elimType).toBeNull();
+  expect(body.data.brackets).toEqual({});
+});
+
+test('GET /v1/tournaments/:id/standings returns a json envelope', async ({ request }) => {
+  const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/standings`);
+  expect(res.status()).toBe(200);
+  expect(Array.isArray((await res.json()).data)).toBe(true);
+});
+
+test('GET /v1/tournaments/:id/standings rejects an invalid groupType with 400', async ({ request }) => {
+  const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/standings?groupType=bogus`);
+  expect(res.status()).toBe(400);
+
+  const body = await res.json();
+  expect(body.error.code).toBe('bad_request');
+});
+
+test('GET /v1/tournaments/:id/pools rejects a non-integer groupSet with 400', async ({ request }) => {
+  const res = await request.get(`/api.php/v1/tournaments/${TEST_TOURNAMENT_ID}/pools?groupSet=abc`);
+  expect(res.status()).toBe(400);
+});

@@ -43,6 +43,8 @@ $routes = [
 	[['tournaments', '{id}', 'participants'], 'apiGetTournamentParticipants'],
 	[['tournaments', '{id}', 'pools'], 'apiGetTournamentPools'],
 	[['tournaments', '{id}', 'pool-matches'], 'apiGetTournamentPoolMatches'],
+	[['tournaments', '{id}', 'brackets'], 'apiGetTournamentBrackets'],
+	[['tournaments', '{id}', 'standings'], 'apiGetTournamentStandings'],
 ];
 
 // ---- Dispatch -------------------------------------------------------------

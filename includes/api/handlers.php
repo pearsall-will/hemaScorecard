@@ -146,6 +146,50 @@ function apiGetTournamentPoolMatches(array $params){
 
 /******************************************************************************/
 
+function apiGetTournamentBrackets(array $params){
+// GET /v1/tournaments/{id}/brackets
+// getBracketInformation() keys by bracket type (BRACKET_PRIMARY=1/
+// BRACKET_SECONDARY=2, i.e. the eventGroups.groupNumber column) plus a
+// top-level 'elimType'; each bracket's matches are fetched by its groupID.
+
+	$tournamentID = $params[0];
+	$eventID = apiRequireTournamentEvent($tournamentID);
+	apiRequireMatchesPublished($eventID);
+
+	$brackets = getBracketInformation($tournamentID);
+	$elimType = $brackets['elimType'] ?? null;
+	unset($brackets['elimType']);
+
+	foreach($brackets as $bracketType => &$bracket){
+		$bracket['matches'] = (object)getBracketMatchesByPosition($bracket['groupID']);
+	}
+	unset($bracket);
+
+	apiRespond([
+		'elimType' => $elimType,
+		'brackets' => (object)$brackets,
+	]);
+}
+
+/******************************************************************************/
+
+function apiGetTournamentStandings(array $params){
+// GET /v1/tournaments/{id}/standings?groupSet=&groupType=pool|finals
+
+	$tournamentID = $params[0];
+	$eventID = apiRequireTournamentEvent($tournamentID);
+	apiRequireMatchesPublished($eventID);
+
+	$groupSet = apiQueryInt('groupSet', 1);
+	$groupType = apiQueryEnum('groupType', ['pool', 'finals'], 'pool');
+
+	$standings = getTournamentStandings($tournamentID, $groupSet, $groupType);
+
+	apiRespond($standings ?: []);
+}
+
+/******************************************************************************/
+
 function apiRequireEventPublished(int $eventID){
 // 404 (not 403) so an unpublished/hidden event's existence isn't revealed.
 
