@@ -847,6 +847,7 @@ function helpDisplayLogistics(){
 			<li><a href='#ranking-types'>Ranking Types</a></li>
 			<li><a href='#divisions'>Tournament Divisions</a></li>
 			<li><a href='#cut-deduct'>Cutting Deductions</a></li>
+			<li><a href='#obs-overlay'>OBS Overlay (Streaming)</a></li>
 		</div>
 	</div>
 
@@ -1003,6 +1004,42 @@ For our example "Longsword - Entries" is the donor tournament.</p>
 
 <p>If you click on Display Window a pop-out will appear that shows the current score, and the scores and deduction for each cut. This display window does not update automatically (yet), and to update the content to the current score or to a new competitor click the Display Window button again.</p>
 
+
+<a href='#topOfPage'>Back to Top</a>
+</div>
+
+
+<!-- OBS Overlay ------------------------------------------------------------>
+<a name='obs-overlay'></a>
+
+<div class='documentation-div'>
+
+<h1>OBS Overlay (Streaming)</h1>
+
+<p>If you are streaming a tournament you can use <b>scoreMatchDisplayOBS.php</b> as a "scorebug" overlay in OBS (or any other software that supports browser sources, such as Streamlabs or vMix). It shows fighter names, schools, live scores, penalty cards, and the match timer, and updates itself automatically as the match is scored &mdash; no page refresh needed and no login required.</p>
+
+<h2>Setting Up The Browser Source</h2>
+
+<p>
+<ol>
+<li>Find the <b>match number</b> you want to display (the same number used on the match scoring page URL).</li>
+<li>In OBS add a new <b>Browser Source</b>.</li>
+<li>Set the URL to your Scorecard address plus <code>/scoreMatchDisplayOBS.php?m=&lt;matchID&gt;</code>, replacing <code>&lt;matchID&gt;</code> with the match number.
+<BR><i>Example: <code>https://scorecard.hemaalliance.com/scoreMatchDisplayOBS.php?m=12345</code></i></li>
+<li>Check <b>Shutdown source when not visible</b> off, and enable <b>Refresh browser when scene becomes active</b> if you want it to reset when you cut back to the scene.</li>
+<li>The background is transparent by default, so the overlay will composite directly over your camera/video feed. Size and position the source on your canvas like any other browser source.</li>
+</ol>
+</p>
+
+<p><u>Switching Matches:</u> To display a different match, edit the browser source's URL and change the <code>m=</code> value to the new match number. There is currently no in-overlay way to switch matches &mdash; it must be changed in OBS.</p>
+
+<h2>Customizing The Look</h2>
+
+<p>The overlay ships with no external styling, so it won't be affected by future software theme changes. Everything about its appearance &mdash; text size, colors, background, and position on screen &mdash; is controlled by CSS custom properties that you can override without touching any PHP. In OBS, open the Browser Source properties and paste your overrides into the <b>Custom CSS</b> box, for example:</p>
+
+<p><code>:root { --obs-name-size: 4vw; --obs-bg: rgba(0,0,0,.4); }</code></p>
+
+<p>By default the overlay is pinned to the bottom of the canvas as a compact strip; the fighter colors are pulled automatically from the tournament's assigned ring colors. See the comments at the top of the overlay's HTML source (view page source, or open the file directly) for the full list of available custom properties and classes.</p>
 
 <a href='#topOfPage'>Back to Top</a>
 </div>
