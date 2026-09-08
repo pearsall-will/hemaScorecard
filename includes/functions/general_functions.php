@@ -97,9 +97,12 @@ function optionValue($value, $selectValue = null){
 
 function customRankingCriteria(){
 // Whitelist of eventStandings fields selectable as custom ranking criteria.
-// Returns [field => [display label, default sort direction]]
+// Returns [field => [display label, default sort direction, formula name]]
 // Only these field names may ever reach an ORDER BY clause; validate all
 // user input against the keys of this array.
+// The optional formula name lets an entry whose key is a SQL expression
+// be referenced by that name inside custom formulas (see
+// customRankingFormulaFields()); bare column keys are their own name.
 
 	return [
 		'wins'              => ['Wins', 'DESC'],
@@ -113,7 +116,7 @@ function customRankingCriteria(){
 		'hitsAgainst'       => ['Hits Against', 'ASC'],
 		'afterblowsAgainst' => ['Afterblows Against', 'ASC'],
 		'numPenalties'      => ['Penalties - All','ASC'],
-		'(numYellowCards + numRedCards)' => ['Penalties - Colored','ASC']
+		'(numYellowCards + numRedCards)' => ['Penalties - Colored','ASC','coloredPenalties']
 	];
 
 }
@@ -121,16 +124,17 @@ function customRankingCriteria(){
 /******************************************************************************/
 
 function customRankingFormulaFields(){
-// Columns usable inside custom ranking formulas: the same pick-list as
-// field tiers (customRankingCriteria()), minus any entry whose key is a
-// SQL expression rather than a bare column name, since the formula
-// grammar only accepts identifiers.
-// Returns [column => display label]
+// Identifiers usable inside custom ranking formulas: the same pick-list
+// as field tiers (customRankingCriteria()). An entry keyed by a SQL
+// expression is reachable under its formula name and expands to that
+// expression when compiled.
+// Returns [identifier => SQL expansion]
 
 	$fields = [];
 	foreach(customRankingCriteria() as $column => $info){
-		if(ctype_alnum($column) == true){
-			$fields[$column] = $info[0];
+		$name = isset($info[2]) ? $info[2] : $column;
+		if(ctype_alnum($name) == true){
+			$fields[$name] = $column;
 		}
 	}
 	return $fields;
