@@ -121,35 +121,19 @@ function customRankingCriteria(){
 /******************************************************************************/
 
 function customRankingFormulaFields(){
-// Whitelist of eventStandings columns usable inside custom ranking formulas.
-// Superset of customRankingCriteria(); keys are the canonical column names.
+// Columns usable inside custom ranking formulas: the same pick-list as
+// field tiers (customRankingCriteria()), minus any entry whose key is a
+// SQL expression rather than a bare column name, since the formula
+// grammar only accepts identifiers.
 // Returns [column => display label]
-// Excludes score (the formula computes it), rank, IDs, and group columns.
 
-	return [
-		'matches'                   => 'Matches',
-		'wins'                      => 'Wins',
-		'losses'                    => 'Losses',
-		'ties'                      => 'Ties',
-		'pointsFor'                 => 'Points For',
-		'pointsAgainst'             => 'Points Against',
-		'hitsFor'                   => 'Hits For',
-		'hitsAgainst'               => 'Hits Against',
-		'afterblowsFor'             => 'Afterblows For',
-		'afterblowsAgainst'         => 'Afterblows Against',
-		'doubles'                   => 'Doubles',
-		'doubleOuts'                => 'Double Outs',
-		'noExchanges'               => 'No Exchanges',
-		'AbsPointsFor'              => 'Absolute Points For',
-		'AbsPointsAgainst'          => 'Absolute Points Against',
-		'AbsPointsAwarded'          => 'Absolute Points Awarded',
-		'numPenalties'              => 'Penalties',
-		'numYellowCards'            => 'Yellow Cards',
-		'numRedCards'               => 'Red Cards',
-		'penaltiesAgainst'          => 'Penalties Against',
-		'penaltiesAgainstOpponents' => 'Penalties Against Opponents',
-		'numCleanHits'              => 'Clean Hits',
-	];
+	$fields = [];
+	foreach(customRankingCriteria() as $column => $info){
+		if(ctype_alnum($column) == true){
+			$fields[$column] = $info[0];
+		}
+	}
+	return $fields;
 
 }
 
