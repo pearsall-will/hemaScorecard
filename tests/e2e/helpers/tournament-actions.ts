@@ -98,9 +98,8 @@ export async function readCustomCriteria(
  * tournament's settings form. Assumes 'Custom' is already the selected
  * Ranking Type, which makes the selects appear.
  *
- * A formula criterion is edited through the shared #formulaEditorModal:
- * picking '__formula__' on the tier's field select opens it, Apply copies
- * the values into that tier's hidden inputs and closes it.
+ * Picking '__formula__' on a tier's field select re-renders the fragment
+ * via htmx with a formula + fallback input row for that tier.
  */
 export async function fillCustomCriteria(
   page: Page,
@@ -117,23 +116,19 @@ export async function fillCustomCriteria(
         .locator(`#customCriteria${n}Field_select${tournamentID}`)
         .selectOption('__formula__');
 
-      const modal = page.locator('#formulaEditorModal');
-      await expect(modal).toBeVisible();
-
-      const formulaInput = modal.locator('#formulaModalFormula');
+      // The formula row only exists once the htmx swap has landed.
+      const formulaInput = page.locator(`#customCriteria${n}Formula_input${tournamentID}`);
+      await expect(formulaInput).toBeAttached();
       await formulaInput.fill(criterion.formula);
       // .fill() only dispatches an 'input' event; htmx's hx-trigger listens
       // for 'change'/'keyup', so nudge it manually for live validation.
       await formulaInput.dispatchEvent('change');
 
       if (criterion.fallback) {
-        const fallbackInput = modal.locator('#formulaModalFallback');
-        await fallbackInput.fill(criterion.fallback);
-        await fallbackInput.dispatchEvent('change');
+        await page
+          .locator(`#customCriteria${n}Fallback_input${tournamentID}`)
+          .fill(criterion.fallback);
       }
-
-      await modal.locator('#formulaModalApplyBtn').click();
-      await expect(modal).toBeHidden();
     } else {
       await page
         .locator(`#customCriteria${n}Field_select${tournamentID}`)
