@@ -892,7 +892,7 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 			$currentField = $isFormula ? CUSTOM_CRITERIA_FORMULA : @$eventRanking["orderByField{$num}"];
 			$currentSort = @$eventRanking["orderBySort{$num}"];
 			if(isset($criteriaFields[$currentField]) == true && $currentSort == null){
-				$currentSort = $criteriaFields[$currentField][1];
+				$currentSort = $criteriaFields[$currentField]['sort'];
 			}
 
 			$currentFallback = (string)@$eventRanking["customFallback{$num}"];
@@ -933,7 +933,7 @@ Ties are broken by the tiebreaker criteria in order.');
 
 				<?php foreach($criteriaFields as $field => $fieldInfo): ?>
 					<option <?=optionValue($field, $currentField)?> >
-						<?=$fieldInfo[0]?>
+						<?=$fieldInfo['label']?>
 					</option>
 				<?php endforeach ?>
 

@@ -7120,7 +7120,7 @@ function validateCustomRankingCriteria($formCriteria){
 			}
 
 			$expression = $field;
-			$label = $criteriaFields[$field][0];
+			$label = $criteriaFields[$field]['label'];
 			$source = null;
 			$fallback = null;
 		}
