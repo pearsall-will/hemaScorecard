@@ -196,19 +196,57 @@ function formula_tokenize($source){
 }
 
 /******************************************************************************/
-// Recursive descent parser. Grammar (standard precedence):
+// Recursive descent parser
+//
+// The parser turns the flat token list into a tree so that the emitter
+// can regenerate SQL from structure alone; nothing the user typed is ever
+// copied into the output. It is three mutually recursive functions, one
+// per grammar rule, with the rules ordered from loosest to tightest
+// binding so that operator precedence falls out of the call structure:
+//
 //   expr    := term (('+' | '-') term)*
 //   term    := factor (('*' | '/') factor)*
 //   factor  := '-' factor | NUM | IDENT | '(' expr ')'
-// Identifiers are checked against the whitelist as they are parsed and
-// replaced by their SQL expansion. Nesting depth is bounded by
-// FORMULA_MAX_TOKENS, so no separate depth limit is needed.
-// AST nodes: ['num', value], ['field', expansion], ['neg', child],
-//            ['op', operator, left, right]
-// Each function returns a node or ['error' => user facing message].
+//
+// An expr is a chain of terms joined by + and -; each term is a chain of
+// factors joined by * and /; so "a + b * c" parses b * c first, as a
+// single term, and multiplication binds tighter without any explicit
+// precedence table.
+//
+// Shared parser state is one array passed by reference:
+//   tokens     - output of formula_tokenize()
+//   index      - position of the next unread token
+//   lookup     - lowercase identifier => SQL expansion (from the whitelist)
+//   validNames - comma separated whitelist names for error messages
+//   numFields  - count of identifiers seen, so a constant-only formula
+//                can be refused
+//
+// Identifiers are whitelisted at the moment they are parsed, rather than
+// in a separate pass over the tree, so an unknown name is reported with
+// its position and no invalid tree is ever built.
+//
+// Nesting depth is bounded by FORMULA_MAX_TOKENS (each level costs at
+// least one token), so recursion cannot run away and no separate depth
+// limit is needed.
+//
+// Tree nodes are small positional arrays:
+//   ['num', value]                  numeric literal, as typed
+//   ['field', expansion]            whitelisted identifier, already
+//                                   replaced by its SQL expansion
+//   ['neg', child]                  unary minus
+//   ['op', operator, left, right]   binary + - * /
+//
+// Each parse function returns a node, or ['error' => message] which every
+// caller passes straight back up so the first problem wins.
 
 function _formula_parseExpr(&$state){
 // expr := term (('+' | '-') term)*
+//
+// Parses the loosest-binding level: one term, then any number of
+// "+ term" or "- term" continuations. Each continuation folds the running
+// result into the left side of a new 'op' node, which makes the chain
+// left associative: "a - b - c" becomes ((a - b) - c), matching how the
+// arithmetic must be evaluated.
 
 	$left = _formula_parseTerm($state);
 	if(isset($left['error'])){
@@ -234,6 +272,12 @@ function _formula_parseExpr(&$state){
 
 function _formula_parseTerm(&$state){
 // term := factor (('*' | '/') factor)*
+//
+// Same shape as _formula_parseExpr() one level down: one factor, then
+// any number of "* factor" or "/ factor" continuations, folded left.
+// Because expr asks for whole terms between its + and - signs, every
+// * and / has already been grouped by the time expr looks at the token
+// stream, which is what gives multiplication its higher precedence.
 
 	$left = _formula_parseFactor($state);
 	if(isset($left['error'])){
@@ -259,6 +303,25 @@ function _formula_parseTerm(&$state){
 
 function _formula_parseFactor(&$state){
 // factor := '-' factor | NUM | IDENT | '(' expr ')'
+//
+// Parses a single value, the tightest-binding level. This is the only
+// function that consumes tokens other than operators, and the only one
+// that can fail on a token's identity, so all "unexpected"/"unknown"
+// errors originate here.
+//
+// A leading '-' is unary minus: it wraps the value after it in a 'neg'
+// node. The tokenizer only produces unsigned numbers, so "-1" arrives as
+// OP '-' then NUM '1' and is handled here too; treating it at factor
+// level (rather than in the tokenizer) is what stops "wins -1" from
+// being misread as wins followed by the number -1.
+//
+// Identifiers are looked up case-insensitively and the node stores the
+// whitelist's SQL expansion instead of the typed name, so the emitter
+// never sees user text.
+//
+// A parenthesised group recurses back to the top of the grammar and
+// returns the inner tree directly; the parentheses themselves leave no
+// node because the emitter re-parenthesises everything anyway.
 
 	if($state['index'] >= count($state['tokens'])){
 		return ['error' => "Formula ends unexpectedly."];
@@ -309,7 +372,14 @@ function _formula_parseFactor(&$state){
 /******************************************************************************/
 
 function _formula_peek(&$state, $type, $values = null){
-// True if the next token matches $type (and one of $values if given).
+// True if the next unread token has type $type and, when $values is
+// given, one of those values. Does not consume the token.
+//
+// This is the lookahead the grammar's "( ... )*" repetitions need: expr
+// and term call it to decide whether another "+ term" / "* factor"
+// follows, and factor uses it to check for the closing parenthesis.
+// Running off the end of the token list simply reads as "no match", so
+// callers never need their own bounds checks.
 
 	if($state['index'] >= count($state['tokens'])){
 		return false;
@@ -328,13 +398,24 @@ function _formula_peek(&$state, $type, $values = null){
 /******************************************************************************/
 
 function _formula_emit($node, $fallback, $alias){
-// Generates fully parenthesized SQL from a validated AST.
-// Every compound node emits exactly one paren layer; children are either
-// atomic (number, column) or already parenthesized, so operator precedence
-// in the output can never differ from the parse tree.
-// Divisions are wrapped so divide by zero yields the fallback value
-// instead of a strict-mode SQL error (NULLIF turns a zero divisor into
-// NULL, and IFNULL replaces the resulting NULL with the fallback).
+// Walks a parsed tree and returns the SQL expression for it.
+//
+// The output is built only from the tree: numeric literals, whitelist
+// expansions, the four operators, parentheses, and the IFNULL/NULLIF
+// division guard. That is the whole security argument for user formulas:
+// by the time this runs, the source text is gone.
+//
+// Every compound node wraps itself in exactly one pair of parentheses,
+// and leaves (numbers, columns) need none, so the SQL's evaluation order
+// is exactly the tree's regardless of how MySQL ranks the operators.
+//
+// Division is emitted as IFNULL(left / NULLIF(right, 0), fallback):
+// NULLIF turns a zero divisor into NULL, dividing by NULL yields NULL
+// instead of raising a strict-mode error, and IFNULL swaps that NULL for
+// the tier's fallback so the fighter still gets a sortable value.
+//
+// $alias is prefixed to every column so the same tree can serve both the
+// standings SELECT (no alias) and the self-joined tie query (eS./eS2.).
 
 	switch($node[0]){
 		case 'num':
