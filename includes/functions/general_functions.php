@@ -102,6 +102,8 @@ function customRankingCriteria(){
 // all user input against them.
 // Returns [sql => ['label' => option text, 'sort' => default direction,
 //                  'formulaID' => identifier usable in custom formulas]]
+// formulaID is optional: an entry without one can be picked as a field
+// tier but is not available inside custom formulas.
 
 	return [
 		'wins' => [
@@ -171,14 +173,17 @@ function customRankingCriteria(){
 /******************************************************************************/
 
 function customRankingFormulaFields(){
-// Identifiers usable inside custom ranking formulas: the same pick-list
-// as field tiers (customRankingCriteria()), each reachable under its
-// 'formulaID' and expanding to its SQL key when compiled.
+// Identifiers usable inside custom ranking formulas: the entries of the
+// field pick-list (customRankingCriteria()) that carry a 'formulaID',
+// each reachable under that identifier and expanding to its SQL key
+// when compiled. Entries without a formulaID are left out.
 // Returns [identifier => SQL expansion]
 
 	$fields = [];
 	foreach(customRankingCriteria() as $sql => $info){
-		$fields[$info['formulaID']] = $sql;
+		if(empty($info['formulaID']) == false){
+			$fields[$info['formulaID']] = $sql;
+		}
 	}
 	return $fields;
 
