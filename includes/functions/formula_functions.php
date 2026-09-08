@@ -97,6 +97,9 @@ function formula_compile($source, $fallback, $whitelist, $alias = ''){
 
 function formula_tokenize($source){
 // Splits a formula into tokens: NUM, IDENT, OP (+ - * /), LPAREN, RPAREN.
+// Numbers and identifiers span several characters, so the loop grows
+// them in $buffer and flushes the finished token when a character that
+// cannot extend it arrives (or at end of input).
 // Any character outside the token grammar is a hard error, which rejects
 // quotes, backticks, semicolons, and comment openers outright.
 // Returns ['tokens' => [...]] or ['error' => user facing message].
@@ -109,65 +112,83 @@ function formula_tokenize($source){
 	}
 
 	$tokens = [];
-	$len = strlen($source);
-	$i = 0;
+	$buffer = '';
+	$bufferType = null;   // 'NUM' or 'IDENT' while a token is in progress
+	$bufferPos = 0;
 
-	while($i < $len){
-		$char = $source[$i];
+	// Moves the in-progress number/identifier into $tokens.
+	// Returns an error message string, or null on success.
+	$flush = function() use (&$tokens, &$buffer, &$bufferType, &$bufferPos){
+		if($bufferType === null){
+			return null;
+		}
+		// Digits may only be split by a single '.', with digits on both sides
+		if($bufferType === 'NUM' && preg_match('/^[0-9]+(\.[0-9]+)?$/', $buffer) != 1){
+			return "Number '{$buffer}' must have digits after the decimal point.";
+		}
+		$tokens[] = ['type' => $bufferType, 'value' => $buffer, 'pos' => $bufferPos];
+		$buffer = '';
+		$bufferType = null;
+		return null;
+	};
+
+	foreach(str_split($source) as $pos => $char){
+
+		// Extend the token in progress if this character can belong to it
+		if($bufferType === 'NUM' && (ctype_digit($char) || $char === '.')){
+			$buffer .= $char;
+			continue;
+		}
+		if($bufferType === 'IDENT' && (ctype_alnum($char) || $char === '_')){
+			$buffer .= $char;
+			continue;
+		}
+
+		// Otherwise this character ends it
+		$error = $flush();
+		if($error !== null){
+			return ['error' => $error];
+		}
 
 		if(ctype_space($char)){
-			$i++;
 			continue;
 		}
 
 		if(ctype_digit($char)){
-			$num = '';
-			while($i < $len && ctype_digit($source[$i])){
-				$num .= $source[$i];
-				$i++;
-			}
-			if($i < $len && $source[$i] === '.'){
-				if($i + 1 >= $len || ctype_digit($source[$i+1]) == false){
-					return ['error' => "Number '{$num}.' must have digits after the decimal point."];
-				}
-				$num .= '.';
-				$i++;
-				while($i < $len && ctype_digit($source[$i])){
-					$num .= $source[$i];
-					$i++;
-				}
-			}
-			$tokens[] = ['type' => 'NUM', 'value' => $num, 'pos' => $i - strlen($num)];
+			$bufferType = 'NUM';
+			$buffer = $char;
+			$bufferPos = $pos;
 
 		} elseif(ctype_alpha($char)){
-			$ident = '';
-			$start = $i;
-			while($i < $len && (ctype_alnum($source[$i]) || $source[$i] === '_')){
-				$ident .= $source[$i];
-				$i++;
-			}
-			$tokens[] = ['type' => 'IDENT', 'value' => $ident, 'pos' => $start];
+			$bufferType = 'IDENT';
+			$buffer = $char;
+			$bufferPos = $pos;
 
 		} elseif($char === '+' || $char === '-' || $char === '*' || $char === '/'){
-			$tokens[] = ['type' => 'OP', 'value' => $char, 'pos' => $i];
-			$i++;
+			$tokens[] = ['type' => 'OP', 'value' => $char, 'pos' => $pos];
 
 		} elseif($char === '('){
-			$tokens[] = ['type' => 'LPAREN', 'value' => '(', 'pos' => $i];
-			$i++;
+			$tokens[] = ['type' => 'LPAREN', 'value' => '(', 'pos' => $pos];
 
 		} elseif($char === ')'){
-			$tokens[] = ['type' => 'RPAREN', 'value' => ')', 'pos' => $i];
-			$i++;
+			$tokens[] = ['type' => 'RPAREN', 'value' => ')', 'pos' => $pos];
 
 		} else {
 			$safeChar = htmlspecialchars($char);
-			return ['error' => "Unexpected character '{$safeChar}' at position ".($i+1)."."];
+			return ['error' => "Unexpected character '{$safeChar}' at position ".($pos+1)."."];
 		}
 
 		if(count($tokens) > FORMULA_MAX_TOKENS){
 			return ['error' => "Formula is too complex (max ".FORMULA_MAX_TOKENS." tokens)."];
 		}
+	}
+
+	$error = $flush();
+	if($error !== null){
+		return ['error' => $error];
+	}
+	if(count($tokens) > FORMULA_MAX_TOKENS){
+		return ['error' => "Formula is too complex (max ".FORMULA_MAX_TOKENS." tokens)."];
 	}
 
 	return ['tokens' => $tokens];
