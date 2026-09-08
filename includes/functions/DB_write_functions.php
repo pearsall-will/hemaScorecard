@@ -7065,7 +7065,7 @@ function validateCustomRankingCriteria($formCriteria){
 	$formulaFields = customRankingFormulaFields();
 
 	$criteria = [];
-	$expressionsUsed = [];
+	$expressionsUsed = [];  // compiled SQL, so "wins" as a formula matches the "wins" field pick
 
 	foreach([1,2,3,4] as $num){
 
@@ -7099,7 +7099,6 @@ function validateCustomRankingCriteria($formCriteria){
 			}
 
 			$expression = $compiled['sql'];
-			$canonical = $compiled['canonical'];
 
 			// Source text only contains grammar-safe characters once compiled,
 			// but escape for display anyway.
@@ -7121,17 +7120,16 @@ function validateCustomRankingCriteria($formCriteria){
 			}
 
 			$expression = $field;
-			$canonical = $field;
 			$label = $criteriaFields[$field][0];
 			$source = null;
 			$fallback = null;
 		}
 
-		if(isset($expressionsUsed[$canonical]) == true){
+		if(isset($expressionsUsed[$expression]) == true){
 			setAlert(USER_ERROR, "The same field or formula may not be used for more than one custom ranking criteria.<BR><b>Tournament not updated.</b>");
 			return null;
 		}
-		$expressionsUsed[$canonical] = true;
+		$expressionsUsed[$expression] = true;
 
 		$criteria[] = [
 			'label' => $label,
