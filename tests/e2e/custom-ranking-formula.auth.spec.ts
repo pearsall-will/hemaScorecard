@@ -97,20 +97,17 @@ test('formula ranking: criteria persist and standings follow the compiled formul
     });
   });
 
-  await test.step('settings page restores modes, formulas, and fallbacks', async () => {
+  await test.step('settings page restores formulas and fallbacks', async () => {
     await page.goto('/adminTournaments.php');
 
     const rankingSelect = page.locator("select[name='updateTournament[tournamentRankingID]']");
     await expect(rankingSelect.locator('option:checked')).toHaveText(/Custom/);
 
     // Tiers 1-2 are formula tiers: the field select sits on the
-    // '__formula__' sentinel and the hidden inputs carry the real state.
+    // '__formula__' option and each gets a formula/fallback input row.
     await expect(
       page.locator("select[name='updateTournament[customCriteria][1][field]']"),
     ).toHaveValue('__formula__');
-    await expect(
-      page.locator("input[name='updateTournament[customCriteria][1][mode]']"),
-    ).toHaveValue('formula');
     await expect(
       page.locator("input[name='updateTournament[customCriteria][1][formula]']"),
     ).toHaveValue('pointsFor / doubles');
@@ -122,36 +119,25 @@ test('formula ranking: criteria persist and standings follow the compiled formul
       page.locator("select[name='updateTournament[customCriteria][2][field]']"),
     ).toHaveValue('__formula__');
     await expect(
-      page.locator("input[name='updateTournament[customCriteria][2][mode]']"),
-    ).toHaveValue('formula');
-    await expect(
       page.locator("input[name='updateTournament[customCriteria][2][formula]']"),
     ).toHaveValue('pointsFor - pointsAgainst');
     await expect(
       page.locator("input[name='updateTournament[customCriteria][2][fallback]']"),
     ).toHaveValue('0');
 
-    await expect(
-      page.locator("input[name='updateTournament[customCriteria][3][mode]']"),
-    ).toHaveValue('field');
+    // Tier 3 is a field tier: no formula row.
     await expect(
       page.locator("select[name='updateTournament[customCriteria][3][field]']"),
     ).toHaveValue('wins');
+    await expect(
+      page.locator("input[name='updateTournament[customCriteria][3][formula]']"),
+    ).toHaveCount(0);
 
     for (let i = 1; i <= 3; i++) {
       await expect(
         page.locator(`select[name='updateTournament[customCriteria][${i}][sort]']`),
       ).toHaveValue('DESC');
     }
-
-    // Reopening tier 1's modal shows the saved formula/fallback prefilled.
-    await page.locator("[data-tier='1'].custom-criteria-formula-summary").click();
-    const modal = page.locator('#formulaEditorModal');
-    await expect(modal).toBeVisible();
-    await expect(modal.locator('#formulaModalFormula')).toHaveValue('pointsFor / doubles');
-    await expect(modal.locator('#formulaModalFallback')).toHaveValue('9001');
-    await modal.locator('#formulaModalCancelBtn').click();
-    await expect(modal).toBeHidden();
   });
 
   await test.step('roster, pool, and score all matches (no 500 on divide-by-zero)', async () => {
@@ -191,29 +177,17 @@ test('formula ranking: invalid formula is rejected inline and on save', async ({
     });
   });
 
-  const formulaHidden = page.locator("input[name='updateTournament[customCriteria][1][formula]']");
+  const formulaInput = page.locator("input[name='updateTournament[customCriteria][1][formula]']");
 
   await test.step('inline validation flags an injection attempt', async () => {
     await page.goto('/adminTournaments.php');
-    await expect(formulaHidden).toHaveValue('wins * 5 + pointsFor');
+    await expect(formulaInput).toHaveValue('wins * 5 + pointsFor');
 
-    // Reopen tier 1's formula in the modal to edit it.
-    await page.locator("[data-tier='1'].custom-criteria-formula-summary").click();
-    const modal = page.locator('#formulaEditorModal');
-    await expect(modal).toBeVisible();
-    const modalFormula = modal.locator('#formulaModalFormula');
-    await expect(modalFormula).toHaveValue('wins * 5 + pointsFor');
-
-    await modalFormula.fill('wins) OR (1=1');
+    await formulaInput.fill('wins) OR (1=1');
     // fill() only fires an input event; htmx listens for change/keyup.
-    await modalFormula.dispatchEvent('change');
-    await expect(modal.locator('#formulaModalMsg .form-error')).toBeVisible();
-
-    // Apply copies the (still invalid) value into the tier's hidden input —
-    // client-side validation is a hint only; the server has final say.
-    await modal.locator('#formulaModalApplyBtn').click();
-    await expect(modal).toBeHidden();
-    await expect(formulaHidden).toHaveValue('wins) OR (1=1');
+    await formulaInput.dispatchEvent('change');
+    // Inline validation is a hint only; the server has final say on save.
+    await expect(page.locator("[id^='customCriteria1FormulaMsg'] .form-error")).toBeVisible();
   });
 
   await test.step('saving the invalid formula is refused', async () => {
@@ -225,6 +199,6 @@ test('formula ranking: invalid formula is rejected inline and on save', async ({
 
   await test.step('the saved configuration is unchanged', async () => {
     await page.goto('/adminTournaments.php');
-    await expect(formulaHidden).toHaveValue('wins * 5 + pointsFor');
+    await expect(formulaInput).toHaveValue('wins * 5 + pointsFor');
   });
 });

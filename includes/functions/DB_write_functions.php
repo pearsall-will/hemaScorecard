@@ -7028,9 +7028,10 @@ function updateEventTournaments($tournamentID, $updateType, $formInfo){
 
 function validateCustomRankingCriteria($formCriteria){
 // Validates posted custom ranking criteria. Each tier is either a field
-// picked from the customRankingCriteria() whitelist or a user formula
-// compiled by formula_compile() (which regenerates safe SQL from a
-// validated parse tree; raw user text never reaches an ORDER BY).
+// picked from the customRankingCriteria() whitelist or, when the field
+// select holds CUSTOM_CRITERIA_FORMULA, a user formula compiled by
+// formula_compile() (which regenerates safe SQL from a validated parse
+// tree; raw user text never reaches an ORDER BY).
 // Returns an ordered list of ['label','expression','sort','source','fallback']
 // entries, or null (with a user error alert) if the input is invalid.
 
@@ -7043,12 +7044,12 @@ function validateCustomRankingCriteria($formCriteria){
 	foreach([1,2,3,4] as $num){
 
 		$tierName = ($num == 1) ? 'Indicator' : 'Tiebreaker '.($num-1);
-		$mode = (@$formCriteria[$num]['mode'] === 'formula') ? 'formula' : 'field';
+		$field = @$formCriteria[$num]['field'];
 
 		// Map through a strict comparison so the raw POST string never reaches SQL
 		$sort = (@$formCriteria[$num]['sort'] === 'ASC') ? 'ASC' : 'DESC';
 
-		if($mode === 'formula'){
+		if($field === CUSTOM_CRITERIA_FORMULA){
 
 			$source = trim((string)@$formCriteria[$num]['formula']);
 
@@ -7079,8 +7080,6 @@ function validateCustomRankingCriteria($formCriteria){
 			$label = htmlspecialchars((strlen($source) > 77) ? substr($source, 0, 77).'...' : $source);
 
 		} else {
-
-			$field = @$formCriteria[$num]['field'];
 
 			if($field == null || $field == ''){
 				if($num == 1){

@@ -37,7 +37,6 @@ if($_SESSION['eventID'] == null){
 	}
 
 	rankingTypeDescriptions();
-	formulaEditorModal($tournamentID);
 	importAttacksForm($_SESSION['tournamentID'], $formLock);
 
 
