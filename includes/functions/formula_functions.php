@@ -39,6 +39,11 @@ function formula_compile($source, $fallback, $whitelist, $alias = ''){
 	if(is_string($fallback) == false && is_numeric($fallback) == false){
 		return ['error' => "Divide-by-zero fallback must be a number."];
 	}
+	// The fallback is emitted into SQL verbatim, so it must be a plain
+	// decimal literal and nothing else: optional leading minus, digits,
+	// optional fraction. This rejects exponents (1e9), hex (0x1F), leading
+	// or trailing dots (.5 / 5.), whitespace, and any quote, operator, or
+	// comment character. The length cap keeps absurd literals out of SQL.
 	$fallback = trim((string)$fallback);
 	if(strlen($fallback) > 16 || preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $fallback) != 1){
 		return ['error' => "Divide-by-zero fallback must be a number."];
