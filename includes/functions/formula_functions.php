@@ -18,8 +18,73 @@
 
 define("FORMULA_MAX_LENGTH", 200);
 define("FORMULA_MAX_TOKENS", 80);
-define("FORMULA_MAX_DEPTH", 10);
 define("FORMULA_MAX_COMPILED_LENGTH", 1000);
+
+/******************************************************************************/
+
+function formula_compile($source, $fallback, $whitelist, $alias = ''){
+// Compiles a formula into a safe SQL expression.
+//   $source    - user formula text
+//   $fallback  - numeric literal used when any division divides by zero
+//   $whitelist - [columnName => display label]; identifier match is
+//                case-insensitive and canonicalized to the array key
+//   $alias     - table alias prefix for identifiers (e.g. 'eS.')
+// Returns ['sql' => expression] or ['error' => user facing message].
+
+	if($fallback === null || $fallback === ''){
+		$fallback = '0';
+	}
+	if(is_string($fallback) == false && is_numeric($fallback) == false){
+		return ['error' => "Divide-by-zero fallback must be a number."];
+	}
+	$fallback = trim((string)$fallback);
+	if(strlen($fallback) > 16 || preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $fallback) != 1){
+		return ['error' => "Divide-by-zero fallback must be a number."];
+	}
+
+	$result = formula_tokenize($source);
+	if(isset($result['error'])){
+		return $result;
+	}
+
+	// Case-insensitive identifier lookup, canonicalized to the whitelist key
+	$lookup = [];
+	foreach($whitelist as $column => $label){
+		$lookup[strtolower($column)] = $column;
+	}
+
+	$state = [
+		'tokens' => $result['tokens'],
+		'index' => 0,
+		'lookup' => $lookup,
+		'validNames' => implode(', ', array_keys($whitelist)),
+		'numFields' => 0,
+	];
+
+	$ast = _formula_parseExpr($state);
+	if(isset($ast['error'])){
+		return $ast;
+	}
+
+	if($state['index'] < count($state['tokens'])){
+		$token = $state['tokens'][$state['index']];
+		$safeValue = htmlspecialchars($token['value']);
+		return ['error' => "Unexpected '{$safeValue}' at position ".($token['pos']+1)."."];
+	}
+
+	if($state['numFields'] == 0){
+		return ['error' => "Formula must reference at least one field."];
+	}
+
+	$sql = _formula_emit($ast, $fallback, $alias);
+
+	if(strlen($sql) > FORMULA_MAX_COMPILED_LENGTH){
+		return ['error' => "Formula is too long once compiled; please simplify it."];
+	}
+
+	return ['sql' => $sql];
+
+}
 
 /******************************************************************************/
 
@@ -103,44 +168,16 @@ function formula_tokenize($source){
 }
 
 /******************************************************************************/
-
-function formula_parse($source){
 // Recursive descent parser. Grammar (standard precedence):
 //   expr    := term (('+' | '-') term)*
 //   term    := factor (('*' | '/') factor)*
 //   factor  := '-' factor | NUM | IDENT | '(' expr ')'
-// Returns ['ast' => node] or ['error' => user facing message].
+// Identifiers are checked against the whitelist as they are parsed and
+// canonicalized to the whitelist key. Nesting depth is bounded by
+// FORMULA_MAX_TOKENS, so no separate depth limit is needed.
 // AST nodes: ['num', value], ['field', name], ['neg', child],
 //            ['op', operator, left, right]
-
-	$result = formula_tokenize($source);
-	if(isset($result['error'])){
-		return $result;
-	}
-	$tokens = $result['tokens'];
-
-	if(count($tokens) == 0){
-		return ['error' => "Formula is empty."];
-	}
-
-	$state = ['tokens' => $tokens, 'index' => 0, 'depth' => 0];
-
-	$ast = _formula_parseExpr($state);
-	if(isset($ast['error'])){
-		return $ast;
-	}
-
-	if($state['index'] < count($state['tokens'])){
-		$token = $state['tokens'][$state['index']];
-		$safeValue = htmlspecialchars($token['value']);
-		return ['error' => "Unexpected '{$safeValue}' at position ".($token['pos']+1)."."];
-	}
-
-	return ['ast' => $ast];
-
-}
-
-/******************************************************************************/
+// Each function returns a node or ['error' => user facing message].
 
 function _formula_parseExpr(&$state){
 // expr := term (('+' | '-') term)*
@@ -195,42 +232,36 @@ function _formula_parseTerm(&$state){
 function _formula_parseFactor(&$state){
 // factor := '-' factor | NUM | IDENT | '(' expr ')'
 
-	$state['depth']++;
-	if($state['depth'] > FORMULA_MAX_DEPTH){
-		return ['error' => "Formula is nested too deeply (max ".FORMULA_MAX_DEPTH." levels)."];
-	}
-
 	if($state['index'] >= count($state['tokens'])){
-		$state['depth']--;
 		return ['error' => "Formula ends unexpectedly."];
 	}
 
 	$token = $state['tokens'][$state['index']];
+	$state['index']++;
 
 	if($token['type'] === 'OP' && $token['value'] === '-'){
-		$state['index']++;
 		$child = _formula_parseFactor($state);
 		if(isset($child['error'])){
 			return $child;
 		}
-		$state['depth']--;
 		return ['neg', $child];
 	}
 
 	if($token['type'] === 'NUM'){
-		$state['index']++;
-		$state['depth']--;
 		return ['num', $token['value']];
 	}
 
 	if($token['type'] === 'IDENT'){
-		$state['index']++;
-		$state['depth']--;
-		return ['field', $token['value']];
+		$key = strtolower($token['value']);
+		if(isset($state['lookup'][$key]) == false){
+			$safeName = htmlspecialchars($token['value']);
+			return ['error' => "Unknown field '{$safeName}'. Valid fields are: {$state['validNames']}."];
+		}
+		$state['numFields']++;
+		return ['field', $state['lookup'][$key]];
 	}
 
 	if($token['type'] === 'LPAREN'){
-		$state['index']++;
 		$inner = _formula_parseExpr($state);
 		if(isset($inner['error'])){
 			return $inner;
@@ -239,7 +270,6 @@ function _formula_parseFactor(&$state){
 			return ['error' => "Missing closing parenthesis."];
 		}
 		$state['index']++;
-		$state['depth']--;
 		return $inner;
 	}
 
@@ -264,101 +294,6 @@ function _formula_peek(&$state, $type, $values = null){
 		return false;
 	}
 	return true;
-
-}
-
-/******************************************************************************/
-
-function formula_compile($source, $fallback, $whitelist, $alias = ''){
-// Compiles a formula into a safe SQL expression.
-//   $source    - user formula text
-//   $fallback  - numeric literal used when any division divides by zero
-//   $whitelist - [columnName => display label]; identifier match is
-//                case-insensitive and canonicalized to the array key
-//   $alias     - table alias prefix for identifiers (e.g. 'eS.')
-// Returns ['sql', 'canonical', 'fields'] or ['error' => message].
-//   sql       - compiled expression with $alias applied
-//   canonical - compiled expression with no alias (for duplicate checks)
-//   fields    - unique canonical column names referenced
-
-	$result = formula_parse($source);
-	if(isset($result['error'])){
-		return $result;
-	}
-	$ast = $result['ast'];
-
-	if($fallback === null || $fallback === ''){
-		$fallback = '0';
-	}
-	if(is_string($fallback) == false && is_numeric($fallback) == false){
-		return ['error' => "Divide-by-zero fallback must be a number."];
-	}
-	$fallback = trim((string)$fallback);
-	if(strlen($fallback) > 16 || preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $fallback) != 1){
-		return ['error' => "Divide-by-zero fallback must be a number."];
-	}
-
-	// Case-insensitive identifier lookup, canonicalized to the whitelist key
-	$lookup = [];
-	foreach($whitelist as $column => $label){
-		$lookup[strtolower($column)] = $column;
-	}
-
-	$fields = [];
-	$check = _formula_validateFields($ast, $lookup, $whitelist, $fields);
-	if($check !== true){
-		return $check;
-	}
-
-	if(count($fields) == 0){
-		return ['error' => "Formula must reference at least one field."];
-	}
-
-	$sql = _formula_emit($ast, $fallback, $alias);
-	$canonical = ($alias === '') ? $sql : _formula_emit($ast, $fallback, '');
-
-	if(strlen($sql) > FORMULA_MAX_COMPILED_LENGTH){
-		return ['error' => "Formula is too long once compiled; please simplify it."];
-	}
-
-	return ['sql' => $sql, 'canonical' => $canonical, 'fields' => array_values($fields)];
-
-}
-
-/******************************************************************************/
-
-function _formula_validateFields(&$node, $lookup, $whitelist, &$fields){
-// Walks the AST, checks every identifier against the whitelist, and
-// rewrites it in place to the canonical column name.
-// Returns true or ['error' => message].
-
-	switch($node[0]){
-		case 'num':
-			return true;
-
-		case 'field':
-			$key = strtolower($node[1]);
-			if(isset($lookup[$key]) == false){
-				$safeName = htmlspecialchars($node[1]);
-				$validNames = implode(', ', array_keys($whitelist));
-				return ['error' => "Unknown field '{$safeName}'. Valid fields are: {$validNames}."];
-			}
-			$node[1] = $lookup[$key];
-			$fields[$node[1]] = $node[1];
-			return true;
-
-		case 'neg':
-			return _formula_validateFields($node[1], $lookup, $whitelist, $fields);
-
-		case 'op':
-			$check = _formula_validateFields($node[2], $lookup, $whitelist, $fields);
-			if($check !== true){
-				return $check;
-			}
-			return _formula_validateFields($node[3], $lookup, $whitelist, $fields);
-	}
-
-	return ['error' => "Formula could not be parsed."];
 
 }
 

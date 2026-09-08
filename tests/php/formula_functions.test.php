@@ -124,11 +124,6 @@ assertSql('alias prefixes fields, not literals',
 	'IFNULL((eS.pointsFor - 2) / NULLIF(eS.matches, 0), 0)',
 	'0', 'eS.');
 
-$result = compiles('pointsFor / matches', '0', 'eS.');
-check('canonical is alias free',
-	isset($result['canonical']) && $result['canonical'] === 'IFNULL(pointsFor / NULLIF(matches, 0), 0)',
-	isset($result['canonical']) ? "got: {$result['canonical']}" : "error: {$result['error']}");
-
 /*******************************************************************************
 	Identifier canonicalization
 *******************************************************************************/
@@ -137,21 +132,16 @@ assertSql('identifiers are case insensitive and canonicalized',
 	'WINS + abspointsfor',
 	'(wins + AbsPointsFor)');
 
-$result = compiles('wins + matches / doubles');
-check('fields list contains canonical names',
-	isset($result['fields']) && $result['fields'] === ['wins', 'matches', 'doubles'],
-	isset($result['fields']) ? 'got: '.implode(',', $result['fields']) : "error: {$result['error']}");
-
 /*******************************************************************************
-	Depth and size limits
+	Size limits (nesting depth is bounded by the token cap)
 *******************************************************************************/
 
-assertSql('nesting to the depth limit compiles',
-	str_repeat('(', 9).'wins'.str_repeat(')', 9),
+assertSql('deep nesting within the token limit compiles',
+	str_repeat('(', 39).'wins'.str_repeat(')', 39),
 	'wins');
 
-assertRejected('nesting past the depth limit rejected',
-	str_repeat('(', 15).'wins'.str_repeat(')', 15));
+assertRejected('deeper nesting rejected by the token limit',
+	str_repeat('(', 40).'wins'.str_repeat(')', 40));
 
 assertRejected('over-length source rejected',
 	'wins + '.str_repeat('1 + ', 60).'1');
