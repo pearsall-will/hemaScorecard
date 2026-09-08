@@ -103,7 +103,9 @@ function customRankingCriteria(){
 // Returns [sql => ['label' => option text, 'sort' => default direction,
 //                  'formulaID' => identifier usable in custom formulas]]
 // formulaID is optional: an entry without one can be picked as a field
-// tier but is not available inside custom formulas.
+// tier but is not available inside custom formulas. NOTE: Removing a 
+// formulaID that has been used in the past will cause breaks on any events
+// that used it.
 
 	return [
 		'wins' => [
