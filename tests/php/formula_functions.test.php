@@ -51,12 +51,13 @@ function assertRejected($name, $source, $fallback = '0'){
 }
 
 $whitelist = [
-	'wins'          => 'Wins',
-	'matches'       => 'Matches',
-	'pointsFor'     => 'Points For',
-	'pointsAgainst' => 'Points Against',
-	'doubles'       => 'Doubles',
-	'AbsPointsFor'  => 'Absolute Points For',
+	'wins'             => 'wins',
+	'matches'          => 'matches',
+	'pointsFor'        => 'pointsFor',
+	'pointsAgainst'    => 'pointsAgainst',
+	'doubles'          => 'doubles',
+	'AbsPointsFor'     => 'AbsPointsFor',
+	'coloredPenalties' => '(numYellowCards + numRedCards)',
 ];
 
 /*******************************************************************************
@@ -131,6 +132,15 @@ assertSql('alias prefixes fields, not literals',
 assertSql('identifiers are case insensitive and canonicalized',
 	'WINS + abspointsfor',
 	'(wins + AbsPointsFor)');
+
+assertSql('stand-in identifier expands to its SQL',
+	'coloredPenalties / matches',
+	'IFNULL((numYellowCards + numRedCards) / NULLIF(matches, 0), 0)');
+
+assertSql('alias reaches every column inside an expansion',
+	'coloredPenalties - wins',
+	'((eS.numYellowCards + eS.numRedCards) - eS.wins)',
+	'0', 'eS.');
 
 /*******************************************************************************
 	Size limits (nesting depth is bounded by the token cap)

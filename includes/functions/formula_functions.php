@@ -26,9 +26,11 @@ function formula_compile($source, $fallback, $whitelist, $alias = ''){
 // Compiles a formula into a safe SQL expression.
 //   $source    - user formula text
 //   $fallback  - numeric literal used when any division divides by zero
-//   $whitelist - [columnName => display label]; identifier match is
-//                case-insensitive and canonicalized to the array key
-//   $alias     - table alias prefix for identifiers (e.g. 'eS.')
+//   $whitelist - [identifier => SQL expansion]; identifier match is
+//                case-insensitive. The expansion is usually the column
+//                itself, but may be column arithmetic such as
+//                '(numYellowCards + numRedCards)'.
+//   $alias     - table alias prefix applied to every column (e.g. 'eS.')
 // Returns ['sql' => expression] or ['error' => user facing message].
 
 	if($fallback === null || $fallback === ''){
@@ -47,10 +49,10 @@ function formula_compile($source, $fallback, $whitelist, $alias = ''){
 		return $result;
 	}
 
-	// Case-insensitive identifier lookup, canonicalized to the whitelist key
+	// Case-insensitive identifier lookup to the SQL expansion
 	$lookup = [];
-	foreach($whitelist as $column => $label){
-		$lookup[strtolower($column)] = $column;
+	foreach($whitelist as $name => $expansion){
+		$lookup[strtolower($name)] = $expansion;
 	}
 
 	$state = [
@@ -173,9 +175,9 @@ function formula_tokenize($source){
 //   term    := factor (('*' | '/') factor)*
 //   factor  := '-' factor | NUM | IDENT | '(' expr ')'
 // Identifiers are checked against the whitelist as they are parsed and
-// canonicalized to the whitelist key. Nesting depth is bounded by
+// replaced by their SQL expansion. Nesting depth is bounded by
 // FORMULA_MAX_TOKENS, so no separate depth limit is needed.
-// AST nodes: ['num', value], ['field', name], ['neg', child],
+// AST nodes: ['num', value], ['field', expansion], ['neg', child],
 //            ['op', operator, left, right]
 // Each function returns a node or ['error' => user facing message].
 
@@ -313,7 +315,9 @@ function _formula_emit($node, $fallback, $alias){
 			return $node[1];
 
 		case 'field':
-			return $alias.$node[1];
+			// Prefix every column in the expansion (a bare column, or
+			// column arithmetic from the whitelist) with the table alias.
+			return preg_replace('/[A-Za-z_][A-Za-z0-9_]*/', $alias.'$0', $node[1]);
 
 		case 'neg':
 			return "(-"._formula_emit($node[1], $fallback, $alias).")";
