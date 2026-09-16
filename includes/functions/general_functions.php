@@ -97,24 +97,97 @@ function optionValue($value, $selectValue = null){
 
 function customRankingCriteria(){
 // Whitelist of eventStandings fields selectable as custom ranking criteria.
-// Returns [field => [display label, default sort direction]]
-// Only these field names may ever reach an ORDER BY clause; validate all
-// user input against the keys of this array.
+// Keyed by the SQL used in ORDER BY / SELECT: a bare column, or column
+// arithmetic. Only these keys may ever reach an ORDER BY clause; validate
+// all user input against them.
+// Returns [sql => ['label' => option text, 'sort' => default direction,
+//                  'formulaID' => identifier usable in custom formulas]]
+// formulaID is optional: an entry without one can be picked as a field
+// tier but is not available inside custom formulas. NOTE: Removing a 
+// formulaID that has been used in the past will cause breaks on any events
+// that used it.
 
 	return [
-		'wins'              => ['Wins', 'DESC'],
-		'ties'              => ['Ties', 'DESC'],
-		'matches'           => ['Matches', 'DESC'],
-		'pointsFor'         => ['Points For', 'DESC'],
-		'hitsFor'           => ['Hits For', 'DESC'],
-		'losses'            => ['Losses', 'ASC'],
-		'doubles'           => ['Doubles', 'ASC'],
-		'pointsAgainst'     => ['Points Against', 'ASC'],
-		'hitsAgainst'       => ['Hits Against', 'ASC'],
-		'afterblowsAgainst' => ['Afterblows Against', 'ASC'],
-		'numPenalties'      => ['Penalties - All','ASC'],
-		'(numYellowCards + numRedCards)' => ['Penalties - Colored','ASC']
+		'wins' => [
+			'label'     => 'Wins',
+			'sort'      => 'DESC',
+			'formulaID' => 'wins',
+		],
+		'ties' => [
+			'label'     => 'Ties',
+			'sort'      => 'DESC',
+			'formulaID' => 'ties',
+		],
+		'matches' => [
+			'label'     => 'Matches',
+			'sort'      => 'DESC',
+			'formulaID' => 'matches',
+		],
+		'pointsFor' => [
+			'label'     => 'Points For',
+			'sort'      => 'DESC',
+			'formulaID' => 'pointsFor',
+		],
+		'hitsFor' => [
+			'label'     => 'Hits For',
+			'sort'      => 'DESC',
+			'formulaID' => 'hitsFor',
+		],
+		'losses' => [
+			'label'     => 'Losses',
+			'sort'      => 'ASC',
+			'formulaID' => 'losses',
+		],
+		'doubles' => [
+			'label'     => 'Doubles',
+			'sort'      => 'ASC',
+			'formulaID' => 'doubles',
+		],
+		'pointsAgainst' => [
+			'label'     => 'Points Against',
+			'sort'      => 'ASC',
+			'formulaID' => 'pointsAgainst',
+		],
+		'hitsAgainst' => [
+			'label'     => 'Hits Against',
+			'sort'      => 'ASC',
+			'formulaID' => 'hitsAgainst',
+		],
+		'afterblowsAgainst' => [
+			'label'     => 'Afterblows Against',
+			'sort'      => 'ASC',
+			'formulaID' => 'afterblowsAgainst',
+		],
+		'numPenalties' => [
+			'label'     => 'Penalties - All',
+			'sort'      => 'ASC',
+			'formulaID' => 'numPenalties',
+		],
+		'(numYellowCards + numRedCards)' => [
+			'label'     => 'Penalties - Colored',
+			'sort'      => 'ASC',
+			'formulaID' => 'coloredPenalties',
+		],
 	];
+
+}
+
+/******************************************************************************/
+
+function customRankingFormulaFields(){
+// Identifiers usable inside custom ranking formulas: the entries of the
+// field pick-list (customRankingCriteria()) that carry a 'formulaID',
+// each reachable under that identifier and expanding to its SQL key
+// when compiled. Entries without a formulaID are left out.
+// Returns [identifier => SQL expansion]
+
+	$fields = [];
+	foreach(customRankingCriteria() as $sql => $info){
+		if(empty($info['formulaID']) == false){
+			$fields[$info['formulaID']] = $sql;
+		}
+	}
+	return $fields;
 
 }
 

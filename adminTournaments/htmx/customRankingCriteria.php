@@ -48,8 +48,14 @@ $postedCriteria = @$_REQUEST['updateTournament']['customCriteria'];
 if(is_array($postedCriteria) == true){
 	$eventRanking = [];
 	foreach([1,2,3,4] as $num){
-		$eventRanking["orderByField{$num}"] = @$postedCriteria[$num]['field'] ?: null;
+		$field = @$postedCriteria[$num]['field'] ?: null;
+		$isFormula = ($field === CUSTOM_CRITERIA_FORMULA);
+		// A formula tier keeps its (possibly still empty) source text so it
+		// re-renders in formula mode; a null customSource marks a field tier.
+		$eventRanking["orderByField{$num}"] = $isFormula ? null : $field;
 		$eventRanking["orderBySort{$num}"] = @$postedCriteria[$num]['sort'] ?: null;
+		$eventRanking["customSource{$num}"] = $isFormula ? (string)@$postedCriteria[$num]['formula'] : null;
+		$eventRanking["customFallback{$num}"] = $isFormula ? (@$postedCriteria[$num]['fallback'] ?: null) : null;
 	}
 } elseif(isCustomRanking($tournamentID) == true){
 	$eventRanking = getEventRankingForTournament($tournamentID);

@@ -97,6 +97,7 @@
 
 	// Sentinel tournamentRankingID for a tournament defined ranking instead of a systemRankings template
 	define("RANKING_CUSTOM",-1);
+	define("CUSTOM_CRITERIA_FORMULA","__formula__"); // field <select> value marking a custom ranking tier as a typed formula
 
 	define("NO_AFTERBLOW",1);
 	define("DEDUCTIVE_AFTERBLOW",2);
