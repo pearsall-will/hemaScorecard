@@ -2,10 +2,8 @@
 /*******************************************************************************
 	htmx snippet for adminTournaments.php
 
-	Inline validation for a custom ranking formula input. Receives one
-	tier's updateTournament[customCriteria][N][formula] (and [fallback])
-	via hx-include and echoes a validity fragment for the row's message
-	target. Server side validation on save remains authoritative.
+	Inline validation of one custom ranking formula tier. Validation on
+	save stays authoritative.
 
 *******************************************************************************/
 
@@ -37,8 +35,7 @@ foreach($postedCriteria as $tier){
 	$compiled = formula_compile($source, $fallback, customRankingFormulaFields());
 
 	if(isset($compiled['error'])){
-		// Compiler error strings are already html-escaped where they echo
-		// user input, but escape the whole message as defense in depth.
+		// Defense in depth; compiler errors already escape user input
 		$message = htmlspecialchars($compiled['error'], ENT_QUOTES | ENT_HTML5, 'UTF-8', false);
 		echo "<span class='form-error is-visible' style='display:block;'>{$message}</span>";
 	} else {

@@ -50,8 +50,7 @@ if(is_array($postedCriteria) == true){
 	foreach([1,2,3,4] as $num){
 		$field = @$postedCriteria[$num]['field'] ?: null;
 		$isFormula = ($field === CUSTOM_CRITERIA_FORMULA);
-		// A formula tier keeps its (possibly still empty) source text so it
-		// re-renders in formula mode; a null customSource marks a field tier.
+		// Non-null customSource (even '') marks a formula tier
 		$eventRanking["orderByField{$num}"] = $isFormula ? null : $field;
 		$eventRanking["orderBySort{$num}"] = @$postedCriteria[$num]['sort'] ?: null;
 		$eventRanking["customSource{$num}"] = $isFormula ? (string)@$postedCriteria[$num]['formula'] : null;

@@ -1,8 +1,6 @@
--- Migration: Custom ranking formula support on eventRankings
--- customSourceN holds the user's raw formula text (NULL = tier is a picked field).
--- customFallbackN holds the user's divide-by-zero fallback literal for redisplay.
--- orderByField/displayField widened to hold compiled SQL expressions
--- (division guards roughly triple the expression length).
+-- Custom ranking formulas: customSourceN holds formula text (NULL = field tier),
+-- customFallbackN the divide-by-zero fallback. orderByField/displayField are
+-- widened for compiled SQL.
 
 ALTER TABLE eventRankings
   ADD COLUMN `customSource1` text DEFAULT NULL,

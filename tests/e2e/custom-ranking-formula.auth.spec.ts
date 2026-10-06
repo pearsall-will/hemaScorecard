@@ -16,15 +16,9 @@ import {
 } from './helpers/standings-calc';
 
 /**
- * Custom ranking FORMULA tiers: instead of picking a whitelisted field, the
- * organizer types a math formula per tier (compiled server-side to guarded
- * SQL). Every division is wrapped so dividing by zero yields the tier's
- * "if /0" fallback value instead of a strict-mode SQL error.
- *
- * The indicator pointsFor / doubles (fallback 9001) deliberately ranks the
- * 0-double fighters first (9001 mirrors the systemRankings ratio convention),
- * proving the standings follow the compiled formula chain: fighters who LOST
- * every match can top the table.
+ * Custom ranking formula tiers. The indicator pointsFor / doubles (fallback
+ * 9001) ranks 0-double fighters first, so standings must follow the compiled
+ * formula rather than wins.
  */
 
 const WEAPON = 'Dane Axe'; // distinct from other specs' weapons
@@ -42,9 +36,8 @@ const FORMULA_CRITERIA: CustomCriterion[] = [
 // First 4 seeded fighters -> 6 round-robin matches in one pool.
 const FORMULA_FIGHTERS = FIGHTERS.slice(0, 4);
 
-// Dukas dominates on wins but carries the only double (with Bowman), so the
-// ratio formula puts the two 0-double fighters (Chandler, Applegate) on the
-// 9001 fallback ahead of him; their tie breaks on pointsFor - pointsAgainst.
+// Dukas leads on wins but has a double, so the 0-double fighters (Chandler,
+// Applegate) rank above him on the 9001 fallback.
 const MATCH_SCRIPT: MatchScript = new Map([
   [pairKey('Dukas', 'Applegate'), {
     exchanges: [{ scorer: 'Dukas', points: 5 }],
@@ -103,8 +96,7 @@ test('formula ranking: criteria persist and standings follow the compiled formul
     const rankingSelect = page.locator("select[name='updateTournament[tournamentRankingID]']");
     await expect(rankingSelect.locator('option:checked')).toHaveText(/Custom/);
 
-    // Tiers 1-2 are formula tiers: the field select sits on the
-    // '__formula__' option and each gets a formula/fallback input row.
+    // Tiers 1-2 are formula tiers with a formula/fallback row
     await expect(
       page.locator("select[name='updateTournament[customCriteria][1][field]']"),
     ).toHaveValue('__formula__');
@@ -143,8 +135,7 @@ test('formula ranking: criteria persist and standings follow the compiled formul
   await test.step('roster, pool, and score all matches (no 500 on divide-by-zero)', async () => {
     await addFightersToTournamentRoster(page, FORMULA_FIGHTERS);
     await createPoolAndAssignFighters(page, FORMULA_FIGHTERS);
-    // Scoring recalculates standings after every match; fighters without
-    // doubles exercise the fallback path in the score UPDATE each time.
+    // Every score update hits the fallback for fighters without doubles
     await scoreAllPoolMatches(page, MATCH_SCRIPT, FORMULA_FIGHTERS);
   });
 
@@ -158,8 +149,7 @@ test('formula ranking: criteria persist and standings follow the compiled formul
       const got = displayed[i];
       expect(parseInt(got['Rank'], 10), `rank of ${want.lastName}`).toBe(i + 1);
       expect(got['Name'], `row ${i + 1} fighter`).toContain(want.lastName);
-      // Formula tiers display as their own columns headed by the source text;
-      // Score mirrors the indicator formula.
+      // Formula columns are headed by their source; Score mirrors the indicator
       expect(parseFloat(got['pointsFor / doubles'])).toBeCloseTo(indicator(want), 1);
       expect(parseFloat(got['pointsFor - pointsAgainst'])).toBe(pointDiff(want));
       expect(parseFloat(got['Wins'])).toBe(want.wins);

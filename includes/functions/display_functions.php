@@ -850,13 +850,8 @@ function edit_customRankingCriteria($tournamentID = 0, $eventRanking = null, $is
 // Renders the custom ranking criteria selectors as a <tbody> fragment.
 // Emits an empty <tbody> when $eventRanking is null (custom not selected)
 // so the htmx swap target always exists in the options table.
-// Each tier is either a field picked from customRankingCriteria() or a
-// typed math formula with a divide-by-zero fallback. A tier is in formula
-// mode when customSource{N} is non-null: saved config, or '' for an
-// unsaved tier just switched to the "Custom formula..." option. Formula
-// tiers get a second row holding the formula and fallback inputs; the
-// field select re-renders this fragment via htmx when a tier enters or
-// leaves formula mode.
+// Each tier is a picked field or a typed formula; a non-null customSource{N}
+// marks a formula tier, which gets a second row for formula and fallback.
 // $isReverse adds a warning about how criteria behave under
 // Golf/Injury (reverse) scoring.
 // Also echoed by adminTournaments/htmx/customRankingCriteria.php.
@@ -913,9 +908,7 @@ Ties are broken by the tiebreaker criteria in order.');
 		<td>
 		<div class='grid-x grid-padding-x'>
 
-			<?php // Re-render the fragment when this tier enters or leaves formula
-				  // mode (data-formula marks the current mode) so its formula row
-				  // appears or disappears; unsaved values ride along via hx-include. ?>
+			<?php // Re-render on entering or leaving formula mode (data-formula = current mode) ?>
 			<select name='updateTournament[customCriteria][<?=$num?>][field]' class='shrink'
 				id='customCriteria<?=$num?>Field_select<?=$tournamentID?>'
 				onchange="enableTournamentButton('<?=$tournamentID?>')"

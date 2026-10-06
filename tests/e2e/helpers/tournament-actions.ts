@@ -11,11 +11,7 @@ import { MatchScript, pairKey } from './standings-calc';
 
 export type Fighter = { rosterID: number; firstName: string; lastName: string };
 
-/**
- * One custom ranking criterion; sorts map to Highest/Lowest First in the UI.
- * Provide `field` (whitelisted eventStandings column) OR `formula` (math over
- * the formula field whitelist, with an optional divide-by-zero `fallback`).
- */
+/** One custom ranking criterion: a `field` OR a `formula` (optional `fallback`). */
 export type CustomCriterion = {
   field?: string;
   formula?: string;
@@ -97,9 +93,7 @@ export async function readCustomCriteria(
  * Fill the custom ranking criteria selects (htmx fragment) for the given
  * tournament's settings form. Assumes 'Custom' is already the selected
  * Ranking Type, which makes the selects appear.
- *
- * Picking '__formula__' on a tier's field select re-renders the fragment
- * via htmx with a formula + fallback input row for that tier.
+ * A formula criterion picks '__formula__' and fills the row htmx adds.
  */
 export async function fillCustomCriteria(
   page: Page,
@@ -120,8 +114,7 @@ export async function fillCustomCriteria(
       const formulaInput = page.locator(`#customCriteria${n}Formula_input${tournamentID}`);
       await expect(formulaInput).toBeAttached();
       await formulaInput.fill(criterion.formula);
-      // .fill() only dispatches an 'input' event; htmx's hx-trigger listens
-      // for 'change'/'keyup', so nudge it manually for live validation.
+      // fill() fires only 'input'; htmx validates on change/keyup
       await formulaInput.dispatchEvent('change');
 
       if (criterion.fallback) {

@@ -2230,9 +2230,7 @@ function pool_DisplayResults($tournamentID, $groupSet = 1, $showTeams = false){
 			$maxNumFields = $i - 1;
 			break;
 		}
-		// Alias each display expression; long compiled formula expressions
-		// exceed MySQL's result column name length, so the raw expression
-		// string cannot be used as the row key.
+		// Aliased: long formula expressions exceed MySQL's column name length
 		$tmpStr = $displayMeta['displayField'.$i];
 		$selectStr .= ", ({$tmpStr}) AS displayField{$i}";
 	}

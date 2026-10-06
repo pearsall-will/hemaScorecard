@@ -7053,19 +7053,16 @@ function updateEventTournaments($tournamentID, $updateType, $formInfo){
 /******************************************************************************/
 
 function validateCustomRankingCriteria($formCriteria){
-// Validates posted custom ranking criteria. Each tier is either a field
-// picked from the customRankingCriteria() whitelist or, when the field
-// select holds CUSTOM_CRITERIA_FORMULA, a user formula compiled by
-// formula_compile() (which regenerates safe SQL from a validated parse
-// tree; raw user text never reaches an ORDER BY).
-// Returns an ordered list of ['label','expression','sort','source','fallback']
-// entries, or null (with a user error alert) if the input is invalid.
+// Validates posted custom ranking criteria: each tier is a whitelisted
+// field or a formula compiled by formula_compile().
+// Returns a list of ['label','expression','sort','source','fallback'],
+// or null (with a user error alert) if invalid.
 
 	$criteriaFields = customRankingCriteria();
 	$formulaFields = customRankingFormulaFields();
 
 	$criteria = [];
-	$expressionsUsed = [];  // compiled SQL, so "wins" as a formula matches the "wins" field pick
+	$expressionsUsed = [];  // compiled SQL, so formula "wins" duplicates field "wins"
 
 	foreach([1,2,3,4] as $num){
 
@@ -7100,8 +7097,7 @@ function validateCustomRankingCriteria($formCriteria){
 
 			$expression = $compiled['sql'];
 
-			// Source text only contains grammar-safe characters once compiled,
-			// but escape for display anyway.
+			// Defense in depth; compiled source holds only grammar characters
 			$label = htmlspecialchars((strlen($source) > 77) ? substr($source, 0, 77).'...' : $source);
 
 		} else {
@@ -7148,12 +7144,9 @@ function validateCustomRankingCriteria($formCriteria){
 
 function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria){
 // Upserts a tournament defined (custom) ranking into eventRankings.
-// $criteria is an ordered list of ['label','expression','sort','source','fallback']
-// entries which have already been validated (fields against the criteria
-// whitelist, formulas compiled to safe SQL by formula_compile()).
-// Formula tiers store their raw source text in customSourceN (non-null
-// source marks the tier as a formula) and the compiled SQL in the
-// orderByField/displayField/scoreFormula columns.
+// $criteria is the validated list from validateCustomRankingCriteria().
+// Formula tiers keep their source in customSourceN and compiled SQL in
+// the orderByField/displayField/scoreFormula columns.
 // systemRankingID is null to mark the ranking as custom.
 
 	$tournamentID = (int)$tournamentID;
@@ -7179,8 +7172,7 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 			$entry = $criteria[$num-1];
 
 			if($num <= 4){
-				// Expressions are whitelisted field names or compiler output;
-				// quote_smart escaping is defense in depth only.
+				// Already whitelisted or compiled; quote_smart is defense in depth
 				$values["orderByField{$num}"] = quote_smart($entry['expression']);
 				$values["orderBySort{$num}"] = "'".$entry['sort']."'";
 				$values["customSource{$num}"] = ($entry['source'] === null) ? "NULL" : quote_smart($entry['source']);
@@ -7219,9 +7211,7 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 		}
 	}
 
-	// pool_ScoreFighters() stores the score formula in the FLOAT score
-	// column, and strict mode refuses values past FLOAT's ~3.4e38 range.
-	// A formula indicator can exceed that (e.g. a long literal), so clamp it.
+	// Clamp formula scores to the FLOAT score column's range; strict mode errors past it
 	if($criteria[0]['source'] !== null){
 		$scoreFormula = quote_smart("LEAST(GREATEST({$criteria[0]['expression']}, -3.4e38), 3.4e38)");
 	} else {

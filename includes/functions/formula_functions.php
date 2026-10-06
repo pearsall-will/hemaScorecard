@@ -2,17 +2,10 @@
 /*******************************************************************************
 	Formula Functions
 
-	Tokenizer, parser, and SQL compiler for user supplied custom ranking
-	formulas. User text is never interpolated into SQL; the compiler
-	regenerates a canonical SQL expression from the validated parse tree,
-	so the output contains only whitelisted column names, numeric literals,
-	arithmetic operators, parentheses, and IFNULL/NULLIF division guards.
-
-	Every division is rewritten as
-		IFNULL((num) / NULLIF((den), 0), fallback)
-	so a divide by zero can never raise a strict-mode SQL error.
-
-	No database or session dependencies; testable from the CLI.
+	Compiles custom ranking formulas into SQL. User text never reaches SQL:
+	the output is rebuilt from the parse tree using only whitelisted
+	columns, numeric literals, + - * / and parentheses. Every division is
+	guarded so dividing by zero yields the tier's fallback.
 
 *******************************************************************************/
 
@@ -23,14 +16,9 @@ define("FORMULA_MAX_COMPILED_LENGTH", 1000);
 /******************************************************************************/
 
 function formula_compile($source, $fallback, $whitelist, $alias = ''){
-// Compiles a formula into a safe SQL expression.
-//   $source    - user formula text
-//   $fallback  - numeric literal used when any division divides by zero
-//   $whitelist - [identifier => SQL expansion]; identifier match is
-//                case-insensitive. The expansion is usually the column
-//                itself, but may be column arithmetic such as
-//                '(numYellowCards + numRedCards)'.
-//   $alias     - table alias prefix applied to every column (e.g. 'eS.')
+// Compiles a formula to a SQL expression.
+// $whitelist is [identifier => SQL expansion], matched case-insensitively.
+// $alias is prefixed to every column (e.g. 'eS.').
 // Returns ['sql' => expression] or ['error' => user facing message].
 
 	if($fallback === null || $fallback === ''){
@@ -39,11 +27,7 @@ function formula_compile($source, $fallback, $whitelist, $alias = ''){
 	if(is_string($fallback) == false && is_numeric($fallback) == false){
 		return ['error' => "Divide-by-zero fallback must be a number."];
 	}
-	// The fallback is emitted into SQL verbatim, so it must be a plain
-	// decimal literal and nothing else: optional leading minus, digits,
-	// optional fraction. This rejects exponents (1e9), hex (0x1F), leading
-	// or trailing dots (.5 / 5.), whitespace, and any quote, operator, or
-	// comment character. The length cap keeps absurd literals out of SQL.
+	// Emitted into SQL verbatim, so only a plain decimal literal is allowed
 	$fallback = trim((string)$fallback);
 	if(strlen($fallback) > 16 || preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $fallback) != 1){
 		return ['error' => "Divide-by-zero fallback must be a number."];
@@ -96,12 +80,8 @@ function formula_compile($source, $fallback, $whitelist, $alias = ''){
 /******************************************************************************/
 
 function formula_tokenize($source){
-// Splits a formula into tokens: NUM, IDENT, OP (+ - * /), LPAREN, RPAREN.
-// Numbers and identifiers span several characters, so the loop grows
-// them in $buffer and flushes the finished token when a character that
-// cannot extend it arrives (or at end of input).
-// Any character outside the token grammar is a hard error, which rejects
-// quotes, backticks, semicolons, and comment openers outright.
+// Splits a formula into NUM, IDENT, OP, LPAREN and RPAREN tokens; any
+// other character is an error.
 // Returns ['tokens' => [...]] or ['error' => user facing message].
 
 	if(is_string($source) == false || trim($source) === ''){
@@ -116,8 +96,7 @@ function formula_tokenize($source){
 	$bufferType = null;   // 'NUM' or 'IDENT' while a token is in progress
 	$bufferPos = 0;
 
-	// Moves the in-progress number/identifier into $tokens.
-	// Returns an error message string, or null on success.
+	// Moves the in-progress number/identifier into $tokens; returns an error or null
 	$flush = function() use (&$tokens, &$buffer, &$bufferType, &$bufferPos){
 		if($bufferType === null){
 			return null;
@@ -196,57 +175,16 @@ function formula_tokenize($source){
 }
 
 /******************************************************************************/
-// Recursive descent parser
-//
-// The parser turns the flat token list into a tree so that the emitter
-// can regenerate SQL from structure alone; nothing the user typed is ever
-// copied into the output. It is three mutually recursive functions, one
-// per grammar rule, with the rules ordered from loosest to tightest
-// binding so that operator precedence falls out of the call structure:
-//
-//   expr    := term (('+' | '-') term)*
-//   term    := factor (('*' | '/') factor)*
-//   factor  := '-' factor | NUM | IDENT | '(' expr ')'
-//
-// An expr is a chain of terms joined by + and -; each term is a chain of
-// factors joined by * and /; so "a + b * c" parses b * c first, as a
-// single term, and multiplication binds tighter without any explicit
-// precedence table.
-//
-// Shared parser state is one array passed by reference:
-//   tokens     - output of formula_tokenize()
-//   index      - position of the next unread token
-//   lookup     - lowercase identifier => SQL expansion (from the whitelist)
-//   validNames - comma separated whitelist names for error messages
-//   numFields  - count of identifiers seen, so a constant-only formula
-//                can be refused
-//
-// Identifiers are whitelisted at the moment they are parsed, rather than
-// in a separate pass over the tree, so an unknown name is reported with
-// its position and no invalid tree is ever built.
-//
-// Nesting depth is bounded by FORMULA_MAX_TOKENS (each level costs at
-// least one token), so recursion cannot run away and no separate depth
-// limit is needed.
-//
-// Tree nodes are small positional arrays:
-//   ['num', value]                  numeric literal, as typed
-//   ['field', expansion]            whitelisted identifier, already
-//                                   replaced by its SQL expansion
-//   ['neg', child]                  unary minus
-//   ['op', operator, left, right]   binary + - * /
-//
-// Each parse function returns a node, or ['error' => message] which every
-// caller passes straight back up so the first problem wins.
+// Recursive descent parser, one function per rule:
+//   expr   := term (('+' | '-') term)*
+//   term   := factor (('*' | '/') factor)*
+//   factor := '-' factor | NUM | IDENT | '(' expr ')'
+// Nodes: ['num', value], ['field', expansion], ['neg', child],
+// ['op', operator, left, right]. Errors return ['error' => message].
+// Recursion depth is bounded by FORMULA_MAX_TOKENS.
 
 function _formula_parseExpr(&$state){
-// expr := term (('+' | '-') term)*
-//
-// Parses the loosest-binding level: one term, then any number of
-// "+ term" or "- term" continuations. Each continuation folds the running
-// result into the left side of a new 'op' node, which makes the chain
-// left associative: "a - b - c" becomes ((a - b) - c), matching how the
-// arithmetic must be evaluated.
+// expr: terms joined by + and -, left associative
 
 	$left = _formula_parseTerm($state);
 	if(isset($left['error'])){
@@ -271,13 +209,7 @@ function _formula_parseExpr(&$state){
 /******************************************************************************/
 
 function _formula_parseTerm(&$state){
-// term := factor (('*' | '/') factor)*
-//
-// Same shape as _formula_parseExpr() one level down: one factor, then
-// any number of "* factor" or "/ factor" continuations, folded left.
-// Because expr asks for whole terms between its + and - signs, every
-// * and / has already been grouped by the time expr looks at the token
-// stream, which is what gives multiplication its higher precedence.
+// term: factors joined by * and /, left associative
 
 	$left = _formula_parseFactor($state);
 	if(isset($left['error'])){
@@ -302,26 +234,8 @@ function _formula_parseTerm(&$state){
 /******************************************************************************/
 
 function _formula_parseFactor(&$state){
-// factor := '-' factor | NUM | IDENT | '(' expr ')'
-//
-// Parses a single value, the tightest-binding level. This is the only
-// function that consumes tokens other than operators, and the only one
-// that can fail on a token's identity, so all "unexpected"/"unknown"
-// errors originate here.
-//
-// A leading '-' is unary minus: it wraps the value after it in a 'neg'
-// node. The tokenizer only produces unsigned numbers, so "-1" arrives as
-// OP '-' then NUM '1' and is handled here too; treating it at factor
-// level (rather than in the tokenizer) is what stops "wins -1" from
-// being misread as wins followed by the number -1.
-//
-// Identifiers are looked up case-insensitively and the node stores the
-// whitelist's SQL expansion instead of the typed name, so the emitter
-// never sees user text.
-//
-// A parenthesised group recurses back to the top of the grammar and
-// returns the inner tree directly; the parentheses themselves leave no
-// node because the emitter re-parenthesises everything anyway.
+// factor: unary minus, number, whitelisted field, or parenthesised expr.
+// Fields become their SQL expansion, so the emitter never sees user text.
 
 	if($state['index'] >= count($state['tokens'])){
 		return ['error' => "Formula ends unexpectedly."];
@@ -372,14 +286,7 @@ function _formula_parseFactor(&$state){
 /******************************************************************************/
 
 function _formula_peek(&$state, $type, $values = null){
-// True if the next unread token has type $type and, when $values is
-// given, one of those values. Does not consume the token.
-//
-// This is the lookahead the grammar's "( ... )*" repetitions need: expr
-// and term call it to decide whether another "+ term" / "* factor"
-// follows, and factor uses it to check for the closing parenthesis.
-// Running off the end of the token list simply reads as "no match", so
-// callers never need their own bounds checks.
+// True if the next token has type $type (and one of $values, if given)
 
 	if($state['index'] >= count($state['tokens'])){
 		return false;
@@ -398,29 +305,11 @@ function _formula_peek(&$state, $type, $values = null){
 /******************************************************************************/
 
 function _formula_emit($node, $fallback, $alias){
-// Walks a parsed tree and returns the SQL expression for it.
-//
-// The output is built only from the tree: numeric literals, whitelist
-// expansions, the four operators, parentheses, and the IFNULL/NULLIF
-// division guard. That is the whole security argument for user formulas:
-// by the time this runs, the source text is gone.
-//
-// Every compound node wraps itself in exactly one pair of parentheses,
-// and leaves (numbers, columns) need none, so the SQL's evaluation order
-// is exactly the tree's regardless of how MySQL ranks the operators.
-//
-// Division is emitted as IFNULL(left / NULLIF(right, 0), fallback):
-// NULLIF turns a zero divisor into NULL, dividing by NULL yields NULL
-// instead of raising a strict-mode error, and IFNULL swaps that NULL for
-// the tier's fallback so the fighter still gets a sortable value.
-//
-// Integer literals are emitted with a '.0' so MySQL types them DECIMAL.
-// A bare integer literal is BIGINT, and BIGINT arithmetic raises an
-// out-of-range error on overflow (e.g. 4000000000 * 4000000000) in every
-// query context; DECIMAL arithmetic does not.
-//
-// $alias is prefixed to every column so the same tree can serve both the
-// standings SELECT (no alias) and the self-joined tie query (eS./eS2.).
+// Builds SQL from the tree. Compound nodes are fully parenthesised so
+// evaluation order matches the tree.
+// Division becomes IFNULL(a / NULLIF(b, 0), fallback): divide by zero
+// yields the fallback instead of a strict-mode error.
+// Integer literals get '.0' so MySQL uses DECIMAL; BIGINT errors on overflow.
 
 	switch($node[0]){
 		case 'num':
@@ -430,8 +319,7 @@ function _formula_emit($node, $fallback, $alias){
 			return $node[1];
 
 		case 'field':
-			// Prefix every column in the expansion (a bare column, or
-			// column arithmetic from the whitelist) with the table alias.
+			// Prefix every column in the expansion with the alias
 			return preg_replace('/[A-Za-z_][A-Za-z0-9_]*/', $alias.'$0', $node[1]);
 
 		case 'neg':
