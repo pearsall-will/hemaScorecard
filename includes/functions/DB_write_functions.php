@@ -7219,7 +7219,14 @@ function writeCustomRankingToEvent($tournamentID, $eventID, $formatID, $criteria
 		}
 	}
 
-	$scoreFormula = quote_smart($criteria[0]['expression']);
+	// pool_ScoreFighters() stores the score formula in the FLOAT score
+	// column, and strict mode refuses values past FLOAT's ~3.4e38 range.
+	// A formula indicator can exceed that (e.g. a long literal), so clamp it.
+	if($criteria[0]['source'] !== null){
+		$scoreFormula = quote_smart("LEAST(GREATEST({$criteria[0]['expression']}, -3.4e38), 3.4e38)");
+	} else {
+		$scoreFormula = quote_smart($criteria[0]['expression']);
+	}
 
 	$sql = "INSERT INTO eventRankings (
 				eventID, tournamentID, systemRankingID,
