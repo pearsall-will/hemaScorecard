@@ -414,11 +414,19 @@ function _formula_emit($node, $fallback, $alias){
 // instead of raising a strict-mode error, and IFNULL swaps that NULL for
 // the tier's fallback so the fighter still gets a sortable value.
 //
+// Integer literals are emitted with a '.0' so MySQL types them DECIMAL.
+// A bare integer literal is BIGINT, and BIGINT arithmetic raises an
+// out-of-range error on overflow (e.g. 4000000000 * 4000000000) in every
+// query context; DECIMAL arithmetic does not.
+//
 // $alias is prefixed to every column so the same tree can serve both the
 // standings SELECT (no alias) and the self-joined tie query (eS./eS2.).
 
 	switch($node[0]){
 		case 'num':
+			if(strpos($node[1], '.') === false){
+				return $node[1].'.0';
+			}
 			return $node[1];
 
 		case 'field':

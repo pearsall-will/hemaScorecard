@@ -66,23 +66,27 @@ $whitelist = [
 
 assertSql('multiplication binds tighter than addition',
 	'1 + 2 * wins',
-	'(1 + (2 * wins))');
+	'(1.0 + (2.0 * wins))');
 
 assertSql('subtraction is left associative',
 	'wins - 4 - 3',
-	'((wins - 4) - 3)');
+	'((wins - 4.0) - 3.0)');
 
 assertSql('division is left associative',
 	'wins / 4 / 2',
-	'IFNULL(IFNULL(wins / NULLIF(4, 0), 0) / NULLIF(2, 0), 0)');
+	'IFNULL(IFNULL(wins / NULLIF(4.0, 0), 0) / NULLIF(2.0, 0), 0)');
 
 assertSql('parentheses override precedence',
 	'(1 + wins) * 3',
-	'((1 + wins) * 3)');
+	'((1.0 + wins) * 3.0)');
 
 assertSql('decimal literals pass through',
 	'wins * 0.5',
 	'(wins * 0.5)');
+
+assertSql('integer literals become DECIMAL so MySQL never does BIGINT math',
+	'4000000000 * 4000000000 + wins',
+	'((4000000000.0 * 4000000000.0) + wins)');
 
 /*******************************************************************************
 	Unary minus
@@ -90,7 +94,7 @@ assertSql('decimal literals pass through',
 
 assertSql('unary minus on a field', '-wins', '(-wins)');
 assertSql('double unary minus', '--wins', '(-(-wins))');
-assertSql('unary minus in a product', '2 * -wins', '(2 * (-wins))');
+assertSql('unary minus in a product', '2 * -wins', '(2.0 * (-wins))');
 
 /*******************************************************************************
 	Division guard
@@ -122,7 +126,7 @@ check('empty fallback defaults to 0',
 
 assertSql('alias prefixes fields, not literals',
 	'(pointsFor - 2) / matches',
-	'IFNULL((eS.pointsFor - 2) / NULLIF(eS.matches, 0), 0)',
+	'IFNULL((eS.pointsFor - 2.0) / NULLIF(eS.matches, 0), 0)',
 	'0', 'eS.');
 
 /*******************************************************************************
