@@ -27,7 +27,7 @@ import {
  * every match can top the table.
  */
 
-const WEAPON = 'Messer'; // distinct from other specs' weapons
+const WEAPON = 'Dane Axe'; // distinct from other specs' weapons
 const REJECT_WEAPON = 'Dagger';
 
 const FORMULA_CRITERIA: CustomCriterion[] = [
